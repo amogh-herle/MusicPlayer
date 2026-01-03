@@ -82,6 +82,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Force portrait programmatically (additional runtime enforcement)
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -999,4 +1002,3 @@ fun MusicPlayerScreen(
         }
     }
 }}
-

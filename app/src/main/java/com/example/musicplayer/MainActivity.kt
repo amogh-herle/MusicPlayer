@@ -279,78 +279,98 @@ class MainActivity : ComponentActivity() {
     private fun toggleShuffle() {
         isShuffleEnabled = !isShuffleEnabled
         if (isShuffleEnabled) {
-            // Pass allSongs to PlaylistManager so it can re-shuffle on loop
+            // Save currently playing song before shuffle
+            val playingSong = currentSong
+
+            // Shuffle the songs - this also sets PlaylistManager internal state
             val shuffled = PlaylistManager.smartShuffle(allSongs.toList())
             displayedSongs.clear()
             displayedSongs.addAll(shuffled)
 
-            // smartShuffle already sets currentIndex to 0 and isShuffleMode to true
-            // Don't call setPlaylistWithIndex as it would reset isShuffleMode to false
-            // Only adjust if a song is currently playing
-            currentSong?.let { song ->
-                val index = displayedSongs.indexOf(song)
-                if (index >= 0) {
-                    // Manually update currentIndex without resetting shuffle mode
-                    PlaylistManager.updateCurrentIndex(index)
+            // If a song was playing, find its new position and update index
+            if (playingSong != null) {
+                val newIndex = displayedSongs.indexOfFirst { it.uri == playingSong.uri }
+                if (newIndex >= 0) {
+                    PlaylistManager.updateCurrentIndex(newIndex)
+                    // Update currentSong reference to the one in displayedSongs
+                    currentSong = displayedSongs[newIndex]
                 }
             }
         } else {
+            // Save currently playing song before unshuffling
+            val playingSong = currentSong
+
             // Revert to original order (filtered by search query)
             filterSongs(searchQuery)
 
-            // Turn off shuffle mode and sync the list
-            currentSong?.let { song ->
-                val index = displayedSongs.indexOf(song)
-                if (index >= 0) {
-                    PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), index)
+            // Find playing song in new order and sync
+            if (playingSong != null) {
+                val newIndex = displayedSongs.indexOfFirst { it.uri == playingSong.uri }
+                if (newIndex >= 0) {
+                    PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), newIndex)
+                    currentSong = displayedSongs[newIndex]
+                } else {
+                    PlaylistManager.setPlaylist(displayedSongs.toList())
                 }
-            } ?: run {
-                // No current song, just set the playlist without an index
+            } else {
                 PlaylistManager.setPlaylist(displayedSongs.toList())
             }
         }
     }
 
     private fun playSong(song: Song) {
+        // Immediately update UI
         currentSong = song
+
         val index = displayedSongs.indexOf(song)
-        if (index >= 0) {
-            // ALWAYS sync the playlist to ensure correctness
-            // This prevents any desync between UI and PlaylistManager
-            val currentPlaylist = PlaylistManager.getPlaylist()
-
-            // Check if we're in shuffle mode and playlist matches
-            val playlistMatches = currentPlaylist.size == displayedSongs.size &&
-                    currentPlaylist.zip(displayedSongs).all { (a, b) -> a.uri == b.uri }
-
-            // If in shuffle mode and playlist matches, preserve shuffle mode
-            if (PlaylistManager.isInShuffleMode() && playlistMatches) {
-                // Playlist is correct, just update index to preserve shuffle mode
-                PlaylistManager.updateCurrentIndex(index)
-            } else {
-                // Either not shuffled or playlist doesn't match - sync completely
-                PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), index)
-            }
-
-            // Verify the current song in PlaylistManager matches what we expect
-            val currentInPlaylist = PlaylistManager.getCurrentSong()
-            if (currentInPlaylist?.uri != song.uri) {
-                // Mismatch detected! Force resync
-                android.util.Log.e("MusicPlayer", "PlaylistManager desync detected! " +
-                        "Expected: ${song.title}, Got: ${currentInPlaylist?.title}")
-                PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), index)
-            }
-
-            val intent = Intent(this, MusicPlayerService::class.java).apply {
-                action = MusicPlayerService.ACTION_PLAY
-                putExtra(MusicPlayerService.EXTRA_URI, song.uri.toString())
-                putExtra(MusicPlayerService.EXTRA_TITLE, song.title)
-                putExtra(MusicPlayerService.EXTRA_ARTIST, song.artist)
-                putExtra(MusicPlayerService.EXTRA_ALBUM_ID, song.albumId)
-            }
-            ContextCompat.startForegroundService(this, intent)
-            isPlaying = true
+        if (index < 0) {
+            android.util.Log.e("MusicPlayer", "Song not found in displayedSongs: ${song.title}")
+            return
         }
+
+        // SIMPLE APPROACH: Always set the playlist with the correct index
+        // This ensures PlaylistManager is ALWAYS in sync with what we're playing
+        // We preserve shuffle mode by checking if the playlist content matches
+        val currentPlaylist = PlaylistManager.getPlaylist()
+        val isCurrentlyShuffle = PlaylistManager.isInShuffleMode()
+
+        // Check if playlist content and order match
+        val playlistMatches = currentPlaylist.size == displayedSongs.size &&
+                currentPlaylist.indices.all { i ->
+                    currentPlaylist[i].uri == displayedSongs[i].uri
+                }
+
+        if (isCurrentlyShuffle && playlistMatches) {
+            // Shuffle mode and playlist matches - just update index
+            PlaylistManager.updateCurrentIndex(index)
+        } else {
+            // Need to sync playlist
+            PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), index)
+            // If we were in shuffle mode but had to resync, restore shuffle mode
+            if (isShuffleEnabled) {
+                PlaylistManager.setShuffleModeEnabled(true)
+            }
+        }
+
+        // Double-check: Verify PlaylistManager current song matches
+        val verifyCurrentSong = PlaylistManager.getCurrentSong()
+        if (verifyCurrentSong?.uri != song.uri) {
+            android.util.Log.e("MusicPlayer",
+                "CRITICAL DESYNC! Expected: ${song.title}, Got: ${verifyCurrentSong?.title}")
+            // Force correct state
+            PlaylistManager.setPlaylistWithIndex(displayedSongs.toList(), index)
+        }
+
+        // Now play the song
+        val intent = Intent(this, MusicPlayerService::class.java).apply {
+            action = MusicPlayerService.ACTION_PLAY
+            putExtra(MusicPlayerService.EXTRA_URI, song.uri.toString())
+            putExtra(MusicPlayerService.EXTRA_TITLE, song.title)
+            putExtra(MusicPlayerService.EXTRA_ARTIST, song.artist)
+            putExtra(MusicPlayerService.EXTRA_ALBUM_ID, song.albumId)
+        }
+        ContextCompat.startForegroundService(this, intent)
+        isPlaying = true
     }
 
     private fun togglePlayPause() {

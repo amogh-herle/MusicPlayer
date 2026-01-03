@@ -177,13 +177,24 @@ class MusicPlayerService : Service() {
                     broadcastSongChanged()
                 }
                 setOnCompletionListener { playNext() }
-                setOnErrorListener { _, _, _ -> playNext(); true }
+                setOnErrorListener { _, what, extra ->
+                    android.util.Log.e("MusicPlayerService", "MediaPlayer error: what=$what, extra=$extra")
+                    // Don't auto-skip on error - just stop playback
+                    this@MusicPlayerService.isPlaying = false
+                    updatePlaybackState(PlaybackStateCompat.STATE_ERROR)
+                    broadcastProgress()
+                    true
+                }
                 prepareAsync()
             }
             startForegroundWithNotification()
         } catch (e: Exception) {
             e.printStackTrace()
-            playNext()
+            android.util.Log.e("MusicPlayerService", "Exception playing: ${e.message}")
+            // Don't auto-skip on exception - just log and stop
+            isPlaying = false
+            updatePlaybackState(PlaybackStateCompat.STATE_ERROR)
+            broadcastProgress()
         }
     }
 

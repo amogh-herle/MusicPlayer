@@ -111,6 +111,10 @@ object PlaylistManager {
 
     fun isInShuffleMode(): Boolean = isShuffleMode
 
+    fun setShuffleModeEnabled(enabled: Boolean) {
+        isShuffleMode = enabled
+    }
+
     fun hasManualChanges(): Boolean = hasManualReorder
 
     fun clearManualChanges() {

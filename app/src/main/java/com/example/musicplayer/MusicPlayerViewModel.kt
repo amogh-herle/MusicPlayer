@@ -320,9 +320,5 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun collapsePlayer() {
         _isPlayerExpanded.value = false
     }
-
-    fun togglePlayerExpanded() {
-        _isPlayerExpanded.value = !_isPlayerExpanded.value
-    }
 }
 

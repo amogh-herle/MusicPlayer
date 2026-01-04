@@ -99,20 +99,24 @@ fun DraggableSongList(
                                 if (draggedItemIndex != null) {
                                     dragOffsetY += dragAmount.y
 
-                                    // Calculate how many positions to move
-                                    val currentDraggedIndex = draggedItemIndex!!
-                                    val moveThreshold = itemHeightPx * 0.6f
+                                    // Use while loops to allow continuous multi-position movement
+                                    var currentDraggedIndex = draggedItemIndex!!
+                                    val moveThreshold = itemHeightPx * 0.4f
 
-                                    if (dragOffsetY > moveThreshold && currentDraggedIndex < songs.size - 1) {
-                                        // Move down
+                                    // Moving down - use while to allow multiple swaps per drag
+                                    while (dragOffsetY > moveThreshold && currentDraggedIndex < songs.size - 1) {
                                         onReorder(currentDraggedIndex, currentDraggedIndex + 1)
-                                        draggedItemIndex = currentDraggedIndex + 1
+                                        currentDraggedIndex += 1
+                                        draggedItemIndex = currentDraggedIndex
                                         dragOffsetY -= itemHeightPx
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    } else if (dragOffsetY < -moveThreshold && currentDraggedIndex > 0) {
-                                        // Move up
+                                    }
+
+                                    // Moving up - use while to allow multiple swaps per drag
+                                    while (dragOffsetY < -moveThreshold && currentDraggedIndex > 0) {
                                         onReorder(currentDraggedIndex, currentDraggedIndex - 1)
-                                        draggedItemIndex = currentDraggedIndex - 1
+                                        currentDraggedIndex -= 1
+                                        draggedItemIndex = currentDraggedIndex
                                         dragOffsetY += itemHeightPx
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }

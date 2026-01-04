@@ -1,6 +1,5 @@
 package com.example.musicplayer.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -40,11 +39,8 @@ fun FullScreenPlayer(
     onCollapse: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    val animatedOffset by animateFloatAsState(
-        targetValue = if (dragOffset > 150f) dragOffset else 0f,
-        label = "dragOffset"
-    )
 
     Box(
         modifier = modifier

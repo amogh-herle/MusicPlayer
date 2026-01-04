@@ -355,6 +355,7 @@ class MusicPlayerService : Service() {
             .setDeleteIntent(stopIntent)
             .setOngoing(isPlaying)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .addAction(R.drawable.ic_launcher_foreground, "Prev", prevIntent)
             .addAction(R.drawable.ic_launcher_foreground, if (isPlaying) "Pause" else "Play", pauseResumeIntent)
             .addAction(R.drawable.ic_launcher_foreground, "Next", nextIntent)

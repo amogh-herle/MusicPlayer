@@ -19,7 +19,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -30,6 +33,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -39,10 +43,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * A draggable song list with proper gesture handling.
- * - Single tap: plays the song
- * - Long press + drag: reorders the list
- * - Optimistic UI updates for smooth 60fps animations
+ * Modern draggable song list with gradient effects and smooth animations
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -58,14 +59,12 @@ fun DraggableSongList(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // ===== OPTIMISTIC UI STATE =====
-    // This is the UI-only list that updates immediately during drag
+    // Optimistic UI state
     var isDragging by remember { mutableStateOf(false) }
-
-    // Use a snapshot state list that doesn't recreate on recomposition
     val localList = remember { mutableStateListOf<Song>() }
+    var dragStartIndex by remember { mutableStateOf(-1) }
 
-    // Sync with external list only when NOT actively dragging
+    // Sync with external list
     LaunchedEffect(songs, isDragging) {
         if (!isDragging) {
             if (localList.size != songs.size || localList != songs) {
@@ -75,7 +74,7 @@ fun DraggableSongList(
         }
     }
 
-    // ===== DRAG STATE =====
+    // Drag state
     var draggedItemKey by remember { mutableStateOf<String?>(null) }
     var draggedItemOffsetY by remember { mutableFloatStateOf(0f) }
     var autoScrollJob by remember { mutableStateOf<Job?>(null) }
@@ -85,11 +84,9 @@ fun DraggableSongList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                // Container-level gesture detection
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
-                            // Find which item was long-pressed
                             val hitItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { itemInfo ->
                                 val itemTop = itemInfo.offset
                                 val itemBottom = itemInfo.offset + itemInfo.size
@@ -99,6 +96,7 @@ fun DraggableSongList(
                             hitItem?.let { item ->
                                 if (item.index in localList.indices) {
                                     isDragging = true
+                                    dragStartIndex = item.index
                                     draggedItemKey = localList[item.index].uri.toString()
                                     draggedItemOffsetY = 0f
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -111,14 +109,13 @@ fun DraggableSongList(
                             val draggedKey = draggedItemKey ?: return@detectDragGesturesAfterLongPress
                             draggedItemOffsetY += dragAmount.y
 
-                            // ===== AUTO-SCROLL =====
+                            // Auto-scroll
                             val viewportHeight = listState.layoutInfo.viewportSize.height
                             val scrollThreshold = with(density) { 100.dp.toPx() }
                             val pointerY = change.position.y
 
                             when {
                                 pointerY < scrollThreshold -> {
-                                    // Scroll up
                                     autoScrollJob?.cancel()
                                     autoScrollJob = scope.launch {
                                         while (true) {
@@ -128,7 +125,6 @@ fun DraggableSongList(
                                     }
                                 }
                                 pointerY > viewportHeight - scrollThreshold -> {
-                                    // Scroll down
                                     autoScrollJob?.cancel()
                                     autoScrollJob = scope.launch {
                                         while (true) {
@@ -143,31 +139,27 @@ fun DraggableSongList(
                                 }
                             }
 
-                            // ===== REORDER LOGIC =====
+                            // Reorder logic
                             val currentIndex = localList.indexOfFirst { it.uri.toString() == draggedKey }
                             if (currentIndex == -1) return@detectDragGesturesAfterLongPress
 
                             val currentItemInfo = listState.layoutInfo.visibleItemsInfo
                                 .find { it.index == currentIndex } ?: return@detectDragGesturesAfterLongPress
 
-                            // Calculate center Y of dragged item
                             val draggedCenterY = currentItemInfo.offset + (currentItemInfo.size / 2) + draggedItemOffsetY
 
-                            // Find the item we're hovering over
                             val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { target ->
                                 target.index != currentIndex &&
-                                draggedCenterY >= target.offset &&
-                                draggedCenterY <= target.offset + target.size
+                                        draggedCenterY >= target.offset &&
+                                        draggedCenterY <= target.offset + target.size
                             }
 
                             targetItem?.let { target ->
                                 val targetIndex = target.index
                                 if (targetIndex in localList.indices && currentIndex != targetIndex) {
-                                    // INSTANT UI UPDATE - swap in local list
                                     val item = localList.removeAt(currentIndex)
                                     localList.add(targetIndex, item)
 
-                                    // Adjust offset to keep item under finger
                                     if (targetIndex > currentIndex) {
                                         draggedItemOffsetY -= target.size
                                     } else {
@@ -179,38 +171,36 @@ fun DraggableSongList(
                             }
                         },
                         onDragEnd = {
-                            // Find final positions
                             val draggedKey = draggedItemKey
-                            if (draggedKey != null) {
+                            if (draggedKey != null && dragStartIndex >= 0) {
                                 val finalIndex = localList.indexOfFirst { it.uri.toString() == draggedKey }
-                                val originalIndex = songs.indexOfFirst { it.uri.toString() == draggedKey }
 
-                                // Only notify ViewModel if position actually changed
-                                if (finalIndex != -1 && originalIndex != -1 && finalIndex != originalIndex) {
-                                    onReorder(originalIndex, finalIndex)
+                                if (finalIndex != -1 && finalIndex != dragStartIndex) {
+                                    onReorder(dragStartIndex, finalIndex)
                                 }
                             }
 
-                            // Reset state
                             isDragging = false
                             draggedItemKey = null
                             draggedItemOffsetY = 0f
+                            dragStartIndex = -1
                             autoScrollJob?.cancel()
                             autoScrollJob = null
                         },
                         onDragCancel = {
-                            // Revert to original list on cancel
                             localList.clear()
                             localList.addAll(songs)
 
                             isDragging = false
                             draggedItemKey = null
                             draggedItemOffsetY = 0f
+                            dragStartIndex = -1
                             autoScrollJob?.cancel()
                             autoScrollJob = null
                         }
                     )
-                }
+                },
+            contentPadding = PaddingValues(vertical = 8.dp)
         ) {
             itemsIndexed(
                 items = localList,
@@ -218,7 +208,7 @@ fun DraggableSongList(
             ) { index, song ->
                 val isBeingDragged = song.uri.toString() == draggedItemKey
 
-                DraggableItem(
+                ModernDraggableItem(
                     song = song,
                     isPlaying = currentSong?.uri == song.uri,
                     isBeingDragged = isBeingDragged,
@@ -231,10 +221,10 @@ fun DraggableSongList(
 }
 
 /**
- * Individual draggable song item with click and visual feedback
+ * Modern song item with gradient effects and larger album art
  */
 @Composable
-private fun DraggableItem(
+private fun ModernDraggableItem(
     song: Song,
     isPlaying: Boolean,
     isBeingDragged: Boolean,
@@ -242,132 +232,162 @@ private fun DraggableItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Elevation animation for dragged item
     val elevation by animateDpAsState(
-        targetValue = if (isBeingDragged) 8.dp else 0.dp,
+        targetValue = if (isBeingDragged) 16.dp else 0.dp,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "elevation"
     )
 
-    // Scale animation for dragged item
     val scale by animateFloatAsState(
-        targetValue = if (isBeingDragged) 1.02f else 1f,
+        targetValue = if (isBeingDragged) 1.03f else 1f,
         animationSpec = spring(stiffness = Spring.StiffnessMedium),
         label = "scale"
     )
 
-    Surface(
+    val cardColor = when {
+        isBeingDragged -> MaterialTheme.colorScheme.surfaceContainerHighest
+        isPlaying -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surface
+    }
+
+    Card(
         modifier = modifier
             .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
             .zIndex(if (isBeingDragged) 1f else 0f)
             .graphicsLayer {
                 translationY = dragOffset
                 scaleX = scale
                 scaleY = scale
             }
-            .shadow(elevation)
-            // Clickable is AFTER pointerInput so tap events work
+            .shadow(elevation, MaterialTheme.shapes.medium)
             .clickable(
                 enabled = !isBeingDragged,
                 onClick = onClick
             ),
-        color = when {
-            isBeingDragged -> MaterialTheme.colorScheme.surfaceContainerHighest
-            isPlaying -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.surface
-        }
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Drag Handle
-            Icon(
-                imageVector = Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = if (isBeingDragged) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier
-                    .size(24.dp)
-                    .padding(end = 8.dp)
-            )
-
-            // Album Art
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(song.albumArtUri ?: song.uri)
-                    .placeholder(R.drawable.ic_album_placeholder)
-                    .error(R.drawable.ic_album_error)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = "Album art for ${song.title}",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(56.dp)
-                    .shadow(2.dp, MaterialTheme.shapes.small)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        MaterialTheme.shapes.small
-                    )
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            // Song Info
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isPlaying) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = song.artist,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        Box {
+            // Gradient overlay for playing song
+            if (isPlaying) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Drag Handle with gradient when dragging
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = when {
+                        isBeingDragged -> MaterialTheme.colorScheme.primary
+                        isPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    },
+                    modifier = Modifier
+                        .size(28.dp)
+                        .padding(end = 8.dp)
+                )
 
-            // Duration
-            Text(
-                text = formatDuration(song.duration),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                // Larger Album Art (72dp)
+                Card(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .shadow(if (isPlaying) 8.dp else 4.dp, MaterialTheme.shapes.medium),
+                    shape = MaterialTheme.shapes.medium
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(song.albumArtUri ?: song.uri)
+                            .placeholder(R.drawable.ic_album_placeholder)
+                            .error(R.drawable.ic_album_error)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Album art for ${song.title}",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(16.dp))
+
+                // Song Info
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = song.title,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.SemiBold,
+                            fontSize = 16.sp
+                        ),
+                        color = if (isPlaying) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = song.artist,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp
+                        ),
+                        color = if (isPlaying) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Duration
+                Text(
+                    text = formatDuration(song.duration),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        fontWeight = if (isPlaying) FontWeight.SemiBold else FontWeight.Normal
+                    ),
+                    color = if (isPlaying) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    }
+                )
+            }
         }
     }
-
-    HorizontalDivider()
 }
 
-/**
- * Format duration in mm:ss format
- */
 private fun formatDuration(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
-

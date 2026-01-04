@@ -1,17 +1,12 @@
 package com.example.musicplayer.ui.components
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.example.musicplayer.PlaylistManager
 import com.example.musicplayer.data.Song
@@ -118,6 +113,7 @@ private fun SongListContent(
     onReorderSongs: (Int, Int) -> Unit
 ) {
     Column {
+        // Header with song count
         Text(
             text = "${songs.size} songs${if (searchQuery.isNotEmpty()) " found" else ""}",
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -163,76 +159,13 @@ private fun SongListContent(
             }
         }
 
-        // Draggable queue list
-        var draggedIndex by remember { mutableStateOf<Int?>(null) }
-        var accumulatedOffset by remember { mutableFloatStateOf(0f) }
-        val haptic = LocalHapticFeedback.current
-        val itemHeight = 80f
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = rememberLazyListState()
-        ) {
-            itemsIndexed(
-                items = songs,
-                key = { _, song -> song.uri.toString() }
-            ) { index, song ->
-                val isDragging = draggedIndex == index
-
-                SongItem(
-                    index = index,
-                    song = song,
-                    isPlaying = currentSong?.uri == song.uri,
-                    isDragging = isDragging,
-                    onClick = {
-                        if (draggedIndex == null) {
-                            onSongClick(song)
-                        }
-                    },
-                    onStartDrag = {
-                        draggedIndex = index
-                        accumulatedOffset = 0f
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    },
-                    onDrag = { offset ->
-                        // Only the currently dragged item reports drag events to the list
-                        if (draggedIndex == index && draggedIndex != null) {
-                            accumulatedOffset += offset
-
-                            // Calculate how many list positions we've moved (rounding toward zero)
-                            val positionsDelta = (accumulatedOffset / itemHeight).toInt()
-
-                            if (positionsDelta != 0) {
-                                val from = draggedIndex!!
-                                val rawTarget = from + positionsDelta
-                                val newTargetIndex = rawTarget.coerceIn(0, songs.size - 1)
-
-                                if (newTargetIndex != from) {
-                                    onReorderSongs(from, newTargetIndex)
-                                    // Provide haptic feedback on successful swap
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    // After swapping, the dragged item is now at newTargetIndex
-                                    draggedIndex = newTargetIndex
-                                    // Remove the applied full steps from accumulatedOffset, keep remainder
-                                    accumulatedOffset -= positionsDelta * itemHeight
-                                }
-                            }
-                        }
-                    },
-                    onEndDrag = {
-                        if (draggedIndex == index) {
-                            draggedIndex = null
-                            accumulatedOffset = 0f
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        } else {
-                            // If the item ended drag but index moved due to swaps, just clear state
-                            draggedIndex = null
-                            accumulatedOffset = 0f
-                        }
-                    },
-                    onPositionChanged = {}
-                )
-            }
-        }
+        // Use the new DraggableSongList
+        DraggableSongList(
+            songs = songs,
+            currentSong = currentSong,
+            onSongClick = onSongClick,
+            onReorder = onReorderSongs,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }

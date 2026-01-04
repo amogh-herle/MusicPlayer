@@ -84,28 +84,24 @@ object PlaylistManager {
 
     fun getPlaylist(): List<Song> = playlist.toList()
 
-    fun reorderPlaylist(fromIndex: Int, toIndex: Int) {
-        if (fromIndex !in playlist.indices || toIndex !in playlist.indices) return
+    fun reorderPlaylist(fromIndex: Int, toIndex: Int): List<Song> {
+        if (fromIndex !in playlist.indices || toIndex !in playlist.indices) return playlist
 
-        val song = playlist.removeAt(fromIndex)
-        playlist.add(toIndex, song)
+        val item = playlist.removeAt(fromIndex)
+        playlist.add(toIndex, item)
 
-        hasManualReorder = true
+        // Adjust currentIndex to keep the playing song aligned
+        currentIndex = when {
+            fromIndex == toIndex -> currentIndex
+            fromIndex == currentIndex -> toIndex
+            fromIndex < currentIndex && toIndex >= currentIndex -> currentIndex - 1
+            fromIndex > currentIndex && toIndex <= currentIndex -> currentIndex + 1
+            else -> currentIndex
+        }.coerceIn(0, playlist.lastIndex)
 
-        // LOGIC: Adjust current index based on the move
-        if (currentIndex == fromIndex) {
-            // Case 1: The playing song itself was moved
-            currentIndex = toIndex
-        } else if (currentIndex in (fromIndex + 1)..toIndex) {
-            // Case 2: A song from ABOVE current was moved to BELOW current
-            // (e.g. Current=2, Move 0->4. New Current should be 1)
-            currentIndex--
-        } else if (currentIndex in toIndex until fromIndex) {
-            // Case 3: A song from BELOW current was moved to ABOVE current
-            // (e.g. Current=2, Move 4->0. New Current should be 3)
-            currentIndex++
-        }
+        return playlist.toList()
     }
+
 
     fun isInShuffleMode(): Boolean = isShuffleMode
     fun setShuffleModeEnabled(enabled: Boolean) { isShuffleMode = enabled }

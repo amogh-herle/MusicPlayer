@@ -195,21 +195,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // --- KEY FIX HERE ---
     fun reorderSongs(fromIndex: Int, toIndex: Int) {
         val currentList = _displayedSongs.value.toMutableList()
+        if (fromIndex !in currentList.indices || toIndex !in currentList.indices) return
 
-        if (fromIndex in currentList.indices && toIndex in currentList.indices) {
-            // Perform the swap
-            val item = currentList.removeAt(fromIndex)
-            currentList.add(toIndex, item)
+        // Optimistically update UI list first
+        val moved = currentList.removeAt(fromIndex)
+        currentList.add(toIndex, moved)
+        _displayedSongs.value = currentList
 
-            // Update backend FIRST
-            PlaylistManager.reorderPlaylist(fromIndex, toIndex)
+        // Sync backend and get the authoritative playlist
+        val newPlaylist = PlaylistManager.reorderPlaylist(fromIndex, toIndex)
 
-            // Update current song reference
+        // Refresh currentSong if its index may have shifted
+        val current = _currentSong.value
+        if (current != null) {
+            val updated = newPlaylist.firstOrNull { it.uri == current.uri }
+            if (updated != null && updated != current) {
+                _currentSong.value = updated
+            }
+        } else {
             _currentSong.value = PlaylistManager.getCurrentSong()
-
-            // Update UI list LAST (after backend is synced)
-            // This prevents glitching because the UI already has optimistic updates
-            _displayedSongs.value = currentList
         }
     }
 

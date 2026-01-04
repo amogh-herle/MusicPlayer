@@ -221,6 +221,8 @@ fun MusicPlayerApp(
                     progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
                     onPlayPause = viewModel::togglePlayPause,
                     onNext = viewModel::playNext,
+                    onPrevious = viewModel::playPrevious,
+                    onSeek = { fraction -> viewModel.seekTo((fraction * duration).toLong()) },
                     onClick = viewModel::expandPlayer,
                     modifier = Modifier.padding(bottom = 80.dp) // Above bottom bar
                 )
@@ -316,4 +318,3 @@ private fun DrawerContent(
         )
     }
 }
-

@@ -3,6 +3,7 @@ package com.example.musicplayer.ui.components
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -27,6 +28,8 @@ fun MiniPlayer(
     progress: Float,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onSeek: (Float) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -39,14 +42,19 @@ fun MiniPlayer(
         shadowElevation = 8.dp
     ) {
         Column {
-            // Progress indicator at the top
-            LinearProgressIndicator(
-                progress = { progress },
+            // Progress indicator as a slider so user can scrub
+            // Use a small slider that only appears when duration > 0 (progress in 0..1)
+            Slider(
+                value = progress.coerceIn(0f, 1f),
+                onValueChange = { fraction -> onSeek(fraction) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(2.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    .height(24.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             )
 
             Row(
@@ -92,6 +100,16 @@ fun MiniPlayer(
                     )
                 }
 
+                // Previous button
+                IconButton(onClick = onPrevious) {
+                    Icon(
+                        imageVector = Icons.Default.FastRewind,
+                        contentDescription = "Previous",
+                        modifier = Modifier.size(28.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 // Play/Pause button
                 IconButton(onClick = onPlayPause) {
                     Icon(
@@ -115,4 +133,3 @@ fun MiniPlayer(
         }
     }
 }
-

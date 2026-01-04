@@ -1,13 +1,18 @@
-# Android Studio / IntelliJ
-.idea/
-*.iml
-*.iws
+# Gradle files
 .gradle/
-
-# Gradle
-/build/
+build/
 **/build/
 !gradle/wrapper/gradle-wrapper.jar
+
+# Build outputs (all modules)
+**/intermediates/
+**/generated/
+**/outputs/
+**/tmp/
+**/kotlin-classes/
+
+# Gradle cache and daemons
+gradle-cache/
 
 # Local configuration
 local.properties
@@ -28,7 +33,6 @@ local.properties
 *.class
 
 # Generated files
-/generated/
 gen/
 
 # Native/NDK
@@ -52,13 +56,21 @@ hs_err_pid*
 .DS_Store
 Thumbs.db
 
-# IntelliJ specific (keep project settings out)
-.idea/*
-# but keep file-based project metadata if you intentionally track them: uncomment as needed
-# !.idea/inspectionProfiles
-
-# Android Studio compiled resources
-*/.cxx/
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries
+.idea/libraries/
+.idea/caches/
+.idea/modules.xml
+.idea/.name
+.idea/compiler.xml
+.idea/misc.xml
+.idea/jarRepositories.xml
 
 # Kotlin
 .kotlin/
@@ -70,6 +82,7 @@ Thumbs.db
 *.orig
 *.old
 *.swp
+*.bak
 
 # Crash reports
 crashlytics.properties
@@ -79,29 +92,9 @@ fabric.properties
 .env
 .env.*
 
-# Jetifier/Gradle caches
-.gradle/
-
-# Ignore Gradle wrapper jar if desired (we keep it by default)
-# gradle/wrapper/gradle-wrapper.jar
-
-# Ensure module-level IDE files and sensitive workspace files are ignored
-.idea/workspace.xml
-.idea/tasks.xml
-.idea/usage.statistics.xml
-.idea/dictionaries
-
 # MacOS
 .AppleDouble
 .LSOverride
 
-# Build outputs (Android Studio)
-app/build/
-app/intermediates/
-
-# Optional: keep wrappers and gradle configs
-gradlew
-gradlew.bat
-gradle/wrapper/
-
 # End of .gitignore
+

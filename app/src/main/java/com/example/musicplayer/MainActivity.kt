@@ -219,10 +219,12 @@ fun MusicPlayerApp(
                     currentSong = song,
                     isPlaying = isPlaying,
                     progress = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
+                    currentPosition = currentPosition,
+                    duration = duration,
                     onPlayPause = viewModel::togglePlayPause,
                     onNext = viewModel::playNext,
                     onPrevious = viewModel::playPrevious,
-                    onSeek = { fraction -> viewModel.seekTo((fraction * duration).toLong()) },
+                    onSeek = viewModel::seekTo,
                     onClick = viewModel::expandPlayer,
                     modifier = Modifier.padding(bottom = 80.dp) // Above bottom bar
                 )

@@ -8,7 +8,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,13 +26,24 @@ fun MiniPlayer(
     currentSong: Song,
     isPlaying: Boolean,
     progress: Float,
+    currentPosition: Long,
+    duration: Long,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
-    onSeek: (Float) -> Unit,
+    onSeek: (Long) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Local scrubbing state: fraction 0..1 and whether user is actively scrubbing
+    var sliderFraction by remember { mutableStateOf(progress.coerceIn(0f, 1f)) }
+    var isScrubbing by remember { mutableStateOf(false) }
+
+    // Keep slider in sync when not scrubbing
+    LaunchedEffect(progress, isScrubbing) {
+        if (!isScrubbing) sliderFraction = progress.coerceIn(0f, 1f)
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -42,20 +53,50 @@ fun MiniPlayer(
         shadowElevation = 8.dp
     ) {
         Column {
-            // Progress indicator as a slider so user can scrub
-            // Use a small slider that only appears when duration > 0 (progress in 0..1)
-            Slider(
-                value = progress.coerceIn(0f, 1f),
-                onValueChange = { fraction -> onSeek(fraction) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(24.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            // Progress slider with time labels
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val elapsedToShow = if (isScrubbing) (sliderFraction * duration).toLong() else currentPosition
+                    Text(
+                        text = formatDuration(elapsedToShow),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = formatDuration(duration),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Slider(
+                    value = sliderFraction,
+                    onValueChange = { fraction ->
+                        sliderFraction = fraction.coerceIn(0f, 1f)
+                        isScrubbing = true
+                    },
+                    onValueChangeFinished = {
+                        // Convert fraction -> absolute ms and call seek
+                        val pos = (sliderFraction * duration).toLong()
+                        onSeek(pos)
+                        isScrubbing = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
                 )
-            )
+            }
 
             Row(
                 modifier = Modifier
@@ -132,4 +173,11 @@ fun MiniPlayer(
             }
         }
     }
+}
+
+private fun formatDuration(millis: Long): String {
+    val totalSeconds = millis / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
 }

@@ -40,10 +40,10 @@ fun SongItem(
     val songUri = song.uri.toString()
     var dragOffset by remember(songUri) { mutableStateOf(Offset.Zero) }
 
-    LaunchedEffect(index, isDragging) {
-        if (isDragging) {
+    // Reset drag offset when not dragging
+    LaunchedEffect(isDragging) {
+        if (!isDragging) {
             dragOffset = Offset.Zero
-            onPositionChanged()
         }
     }
 
@@ -73,8 +73,8 @@ fun SongItem(
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            val newY = (dragOffset.y + dragAmount.y).coerceIn(-200f, 200f)
-                            dragOffset = Offset(0f, newY)
+                            // Don't coerce - let it follow the finger
+                            dragOffset = Offset(0f, dragOffset.y + dragAmount.y)
                             onDrag(dragAmount.y)
                         },
                         onDragEnd = {

@@ -197,19 +197,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val currentList = _displayedSongs.value.toMutableList()
 
         if (fromIndex in currentList.indices && toIndex in currentList.indices) {
+            // Perform the swap
             val item = currentList.removeAt(fromIndex)
             currentList.add(toIndex, item)
 
-            // 1. Update UI Flow immediately
-            _displayedSongs.value = currentList
-
-            // 2. Tell Backend to update its internal index map
+            // Update backend FIRST
             PlaylistManager.reorderPlaylist(fromIndex, toIndex)
 
-            // 3. Ensure Current Song State is visually correct
-            // If the playing song was moved, we need to make sure the UI knows it's still the same song
-            // The PlaylistManager updates currentIndex internally, so getCurrentSong() returns the correct song object
+            // Update current song reference
             _currentSong.value = PlaylistManager.getCurrentSong()
+
+            // Update UI list LAST (after backend is synced)
+            // This prevents glitching because the UI already has optimistic updates
+            _displayedSongs.value = currentList
         }
     }
 

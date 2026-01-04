@@ -1,8 +1,12 @@
 package com.example.musicplayer.ui.components
 
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.*
@@ -21,6 +25,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,6 +38,13 @@ import com.example.musicplayer.data.Song
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+/**
+ * A draggable song list with proper gesture handling.
+ * - Single tap: plays the song
+ * - Long press + drag: reorders the list
+ * - Optimistic UI updates for smooth 60fps animations
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DraggableSongList(
     songs: List<Song>,
@@ -44,25 +56,28 @@ fun DraggableSongList(
     val listState = rememberLazyListState()
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
-    // Local list for optimistic updates.
-    // We only sync with 'songs' when NOT dragging to prevent UI jumps.
-    var localList by remember { mutableStateOf(songs) }
+    // ===== OPTIMISTIC UI STATE =====
+    // This is the UI-only list that updates immediately during drag
     var isDragging by remember { mutableStateOf(false) }
 
-    // Sync local list with external list when not dragging
+    // Use a snapshot state list that doesn't recreate on recomposition
+    val localList = remember { mutableStateListOf<Song>() }
+
+    // Sync with external list only when NOT actively dragging
     LaunchedEffect(songs, isDragging) {
         if (!isDragging) {
-            localList = songs
+            if (localList.size != songs.size || localList != songs) {
+                localList.clear()
+                localList.addAll(songs)
+            }
         }
     }
 
-    // Drag state
+    // ===== DRAG STATE =====
     var draggedItemKey by remember { mutableStateOf<String?>(null) }
-    var draggedItemOffset by remember { mutableFloatStateOf(0f) }
-    var initialDragIndex by remember { mutableStateOf<Int?>(null) }
-
-    // Auto-scroll job
+    var draggedItemOffsetY by remember { mutableFloatStateOf(0f) }
     var autoScrollJob by remember { mutableStateOf<Job?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -70,124 +85,129 @@ fun DraggableSongList(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                // Container-level gesture detection
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { offset ->
-                            // 1. Find which item is under the finger
-                            val hitItem = listState.layoutInfo.visibleItemsInfo.find { itemInfo ->
-                                offset.y >= itemInfo.offset && offset.y <= itemInfo.offset + itemInfo.size
+                            // Find which item was long-pressed
+                            val hitItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { itemInfo ->
+                                val itemTop = itemInfo.offset
+                                val itemBottom = itemInfo.offset + itemInfo.size
+                                offset.y >= itemTop && offset.y <= itemBottom
                             }
 
-                            if (hitItem != null) {
-                                val index = hitItem.index
-                                // Ensure index is valid in our local list
-                                if (index in localList.indices) {
+                            hitItem?.let { item ->
+                                if (item.index in localList.indices) {
                                     isDragging = true
-                                    initialDragIndex = index
-                                    draggedItemKey = localList[index].uri.toString()
-                                    draggedItemOffset = 0f
+                                    draggedItemKey = localList[item.index].uri.toString()
+                                    draggedItemOffsetY = 0f
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 }
                             }
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            if (draggedItemKey == null) return@detectDragGesturesAfterLongPress
 
-                            draggedItemOffset += dragAmount.y
+                            val draggedKey = draggedItemKey ?: return@detectDragGesturesAfterLongPress
+                            draggedItemOffsetY += dragAmount.y
 
-                            // 2. Auto-scrolling logic
+                            // ===== AUTO-SCROLL =====
                             val viewportHeight = listState.layoutInfo.viewportSize.height
-                            val distFromTop = change.position.y
-                            val distFromBottom = viewportHeight - change.position.y
-                            val scrollThreshold = 150f // px
+                            val scrollThreshold = with(density) { 100.dp.toPx() }
+                            val pointerY = change.position.y
 
-                            if (distFromTop < scrollThreshold) {
-                                // Scroll up
-                                if (autoScrollJob == null) {
+                            when {
+                                pointerY < scrollThreshold -> {
+                                    // Scroll up
+                                    autoScrollJob?.cancel()
                                     autoScrollJob = scope.launch {
                                         while (true) {
-                                            listState.scrollBy(-10f)
+                                            listState.scrollBy(-8f)
                                             kotlinx.coroutines.delay(10)
                                         }
                                     }
                                 }
-                            } else if (distFromBottom < scrollThreshold) {
-                                // Scroll down
-                                if (autoScrollJob == null) {
+                                pointerY > viewportHeight - scrollThreshold -> {
+                                    // Scroll down
+                                    autoScrollJob?.cancel()
                                     autoScrollJob = scope.launch {
                                         while (true) {
-                                            listState.scrollBy(10f)
+                                            listState.scrollBy(8f)
                                             kotlinx.coroutines.delay(10)
                                         }
                                     }
                                 }
-                            } else {
-                                autoScrollJob?.cancel()
-                                autoScrollJob = null
+                                else -> {
+                                    autoScrollJob?.cancel()
+                                    autoScrollJob = null
+                                }
                             }
 
-                            // 3. Reordering Logic
-                            // Find the current index of the dragged item in the local list
-                            val currentIndex = localList.indexOfFirst { it.uri.toString() == draggedItemKey }
+                            // ===== REORDER LOGIC =====
+                            val currentIndex = localList.indexOfFirst { it.uri.toString() == draggedKey }
                             if (currentIndex == -1) return@detectDragGesturesAfterLongPress
 
-                            // Find the item we are hovering over
-                            // We calculate the absolute Y position of the dragged item center
-                            val currentInfo = listState.layoutInfo.visibleItemsInfo.find { it.index == currentIndex }
-                            if (currentInfo != null) {
-                                val itemCenterY = currentInfo.offset + (currentInfo.size / 2) + draggedItemOffset
+                            val currentItemInfo = listState.layoutInfo.visibleItemsInfo
+                                .find { it.index == currentIndex } ?: return@detectDragGesturesAfterLongPress
 
-                                // Find target to swap with
-                                val targetItem = listState.layoutInfo.visibleItemsInfo.find { target ->
-                                    target.index != currentIndex &&
-                                    itemCenterY >= target.offset &&
-                                    itemCenterY <= target.offset + target.size
-                                }
+                            // Calculate center Y of dragged item
+                            val draggedCenterY = currentItemInfo.offset + (currentItemInfo.size / 2) + draggedItemOffsetY
 
-                                if (targetItem != null) {
-                                    val targetIndex = targetItem.index
-                                    if (targetIndex in localList.indices) {
-                                        // SWAP in local list
-                                        val newList = localList.toMutableList()
-                                        val item = newList.removeAt(currentIndex)
-                                        newList.add(targetIndex, item)
-                                        localList = newList
+                            // Find the item we're hovering over
+                            val targetItem = listState.layoutInfo.visibleItemsInfo.firstOrNull { target ->
+                                target.index != currentIndex &&
+                                draggedCenterY >= target.offset &&
+                                draggedCenterY <= target.offset + target.size
+                            }
 
-                                        // Adjust offset to keep the item visually under the finger
-                                        // If we moved down (target > current), the item moved +height physically, so we reduce offset
-                                        // If we moved up (target < current), the item moved -height physically, so we increase offset
-                                        if (targetIndex > currentIndex) {
-                                            draggedItemOffset -= targetItem.size
-                                        } else {
-                                            draggedItemOffset += targetItem.size
-                                        }
+                            targetItem?.let { target ->
+                                val targetIndex = target.index
+                                if (targetIndex in localList.indices && currentIndex != targetIndex) {
+                                    // INSTANT UI UPDATE - swap in local list
+                                    val item = localList.removeAt(currentIndex)
+                                    localList.add(targetIndex, item)
 
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-
-                                        // Notify ViewModel immediately (or you can wait for onDragEnd)
-                                        onReorder(currentIndex, targetIndex)
+                                    // Adjust offset to keep item under finger
+                                    if (targetIndex > currentIndex) {
+                                        draggedItemOffsetY -= target.size
+                                    } else {
+                                        draggedItemOffsetY += target.size
                                     }
+
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 }
                             }
                         },
                         onDragEnd = {
+                            // Find final positions
+                            val draggedKey = draggedItemKey
+                            if (draggedKey != null) {
+                                val finalIndex = localList.indexOfFirst { it.uri.toString() == draggedKey }
+                                val originalIndex = songs.indexOfFirst { it.uri.toString() == draggedKey }
+
+                                // Only notify ViewModel if position actually changed
+                                if (finalIndex != -1 && originalIndex != -1 && finalIndex != originalIndex) {
+                                    onReorder(originalIndex, finalIndex)
+                                }
+                            }
+
+                            // Reset state
                             isDragging = false
                             draggedItemKey = null
-                            draggedItemOffset = 0f
-                            initialDragIndex = null
+                            draggedItemOffsetY = 0f
                             autoScrollJob?.cancel()
                             autoScrollJob = null
                         },
                         onDragCancel = {
+                            // Revert to original list on cancel
+                            localList.clear()
+                            localList.addAll(songs)
+
                             isDragging = false
                             draggedItemKey = null
-                            draggedItemOffset = 0f
-                            initialDragIndex = null
+                            draggedItemOffsetY = 0f
                             autoScrollJob?.cancel()
                             autoScrollJob = null
-                            // Revert to original list if needed, or just sync with songs
-                            localList = songs
                         }
                     )
                 }
@@ -196,108 +216,158 @@ fun DraggableSongList(
                 items = localList,
                 key = { _, song -> song.uri.toString() }
             ) { index, song ->
-                val isBeingDragged = (song.uri.toString() == draggedItemKey)
+                val isBeingDragged = song.uri.toString() == draggedItemKey
 
-                // If this item is being dragged, apply the offset
-                // If it's not, it sits in its list position naturally
-                val translationY = if (isBeingDragged) draggedItemOffset else 0f
-                val zIndex = if (isBeingDragged) 1f else 0f
-                val elevation by animateDpAsState(if (isBeingDragged) 8.dp else 0.dp, label = "elevation")
-
-                DraggableSongItem(
+                DraggableItem(
                     song = song,
-                    index = index,
                     isPlaying = currentSong?.uri == song.uri,
-                    isDragging = isBeingDragged,
-                    modifier = Modifier
-                        .zIndex(zIndex)
-                        .graphicsLayer {
-                            this.translationY = translationY
-                        }
-                        .shadow(elevation)
-                        .background(MaterialTheme.colorScheme.surface)
-                        .fillMaxWidth()
+                    isBeingDragged = isBeingDragged,
+                    dragOffset = if (isBeingDragged) draggedItemOffsetY else 0f,
+                    onClick = { onSongClick(song) }
                 )
-                HorizontalDivider()
             }
         }
     }
 }
 
+/**
+ * Individual draggable song item with click and visual feedback
+ */
 @Composable
-fun DraggableSongItem(
+private fun DraggableItem(
     song: Song,
-    index: Int,
     isPlaying: Boolean,
-    isDragging: Boolean,
+    isBeingDragged: Boolean,
+    dragOffset: Float,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    // Elevation animation for dragged item
+    val elevation by animateDpAsState(
+        targetValue = if (isBeingDragged) 8.dp else 0.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "elevation"
+    )
+
+    // Scale animation for dragged item
+    val scale by animateFloatAsState(
+        targetValue = if (isBeingDragged) 1.02f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "scale"
+    )
+
+    Surface(
         modifier = modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .height(72.dp), // Fixed height helps with calculation stability
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth()
+            .zIndex(if (isBeingDragged) 1f else 0f)
+            .graphicsLayer {
+                translationY = dragOffset
+                scaleX = scale
+                scaleY = scale
+            }
+            .shadow(elevation)
+            // Clickable is AFTER pointerInput so tap events work
+            .clickable(
+                enabled = !isBeingDragged,
+                onClick = onClick
+            ),
+        color = when {
+            isBeingDragged -> MaterialTheme.colorScheme.surfaceContainerHighest
+            isPlaying -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surface
+        }
     ) {
-        // Drag Handle
-        Icon(
-            imageVector = Icons.Default.DragHandle,
-            contentDescription = "Reorder",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(end = 16.dp)
-        )
-
-        // Album Art
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(song.albumArtUri ?: song.uri)
-                .placeholder(R.drawable.ic_album_placeholder)
-                .error(R.drawable.ic_album_error)
-                .crossfade(true)
-                .build(),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
+        Row(
             modifier = Modifier
-                .size(56.dp)
-                .shadow(4.dp, MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
-        )
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Text Info
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.Center
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
-                color = if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            // Drag Handle
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                tint = if (isBeingDragged) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier
+                    .size(24.dp)
+                    .padding(end = 8.dp)
             )
+
+            // Album Art
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(song.albumArtUri ?: song.uri)
+                    .placeholder(R.drawable.ic_album_placeholder)
+                    .error(R.drawable.ic_album_error)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Album art for ${song.title}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .shadow(2.dp, MaterialTheme.shapes.small)
+                    .background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        MaterialTheme.shapes.small
+                    )
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            // Song Info
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = song.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isPlaying) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = song.artist,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Duration
             Text(
-                text = song.artist,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                text = formatDuration(song.duration),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-
-        // Duration
-        Text(
-            text = formatDurationLocal(song.duration),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
+
+    HorizontalDivider()
 }
 
-private fun formatDurationLocal(millis: Long): String {
+/**
+ * Format duration in mm:ss format
+ */
+private fun formatDuration(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
 }
+

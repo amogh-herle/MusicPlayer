@@ -19,7 +19,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Songs state
     private val _allSongs = MutableStateFlow<List<Song>>(emptyList())
-
     private val _displayedSongs = MutableStateFlow<List<Song>>(emptyList())
     val displayedSongs: StateFlow<List<Song>> = _displayedSongs.asStateFlow()
 
@@ -53,7 +52,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         get() = getApplication()
 
     init {
-        // Load saved music directory
         _currentMusicDirectory.value = LocalScanner.getMusicDirectory(context)
 
         // Collect playback state updates
@@ -68,7 +66,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             MusicPlaybackState.currentSongInfo.collect { songInfo ->
                 if (songInfo.title.isNotEmpty()) {
+                    // Try to find by ID/URI first if possible, otherwise Fallback to Title/Artist
                     _currentSong.value = _displayedSongs.value.find {
+                        it.title == songInfo.title && it.artist == songInfo.artist
+                    } ?: _allSongs.value.find {
                         it.title == songInfo.title && it.artist == songInfo.artist
                     }
                 }
@@ -82,6 +83,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _allSongs.value = scanned
         _displayedSongs.value = scanned
         _isShuffleEnabled.value = false
+        // Update PlaylistManager with initial data
+        PlaylistManager.setPlaylist(scanned)
     }
 
     fun updateSearchQuery(query: String) {
@@ -94,143 +97,63 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _displayedSongs.value = _allSongs.value
             return
         }
-
         val queryLower = query.lowercase(Locale.getDefault())
-        val words = queryLower.split(" ").filter { it.isNotBlank() }
-
-        val scoredSongs = _allSongs.value.map { song ->
-            val titleLower = song.title.lowercase(Locale.getDefault())
-            val artistLower = song.artist.lowercase(Locale.getDefault())
-            val albumLower = song.album.lowercase(Locale.getDefault())
-
-            var score = 0
-
-            // Exact match gets highest score
-            if (titleLower == queryLower) score += 100
-            if (artistLower == queryLower) score += 80
-            if (albumLower == queryLower) score += 60
-
-            // Starts with query
-            if (titleLower.startsWith(queryLower)) score += 50
-            if (artistLower.startsWith(queryLower)) score += 40
-            if (albumLower.startsWith(queryLower)) score += 30
-
-            // Contains query
-            if (titleLower.contains(queryLower)) score += 25
-            if (artistLower.contains(queryLower)) score += 20
-            if (albumLower.contains(queryLower)) score += 15
-
-            // Word matching
-            words.forEach { word ->
-                if (titleLower.contains(word)) score += 10
-                if (artistLower.contains(word)) score += 8
-                if (albumLower.contains(word)) score += 5
-
-                // Fuzzy matching
-                titleLower.split(" ").forEach { titleWord ->
-                    if (levenshteinDistance(word, titleWord) <= 2) score += 5
-                }
-                artistLower.split(" ").forEach { artistWord ->
-                    if (levenshteinDistance(word, artistWord) <= 2) score += 4
-                }
-            }
-
-            // Acronym matching
-            val titleAcronym = song.title.split(" ").mapNotNull { it.firstOrNull()?.lowercaseChar() }.joinToString("")
-            val artistAcronym = song.artist.split(" ").mapNotNull { it.firstOrNull()?.lowercaseChar() }.joinToString("")
-            if (titleAcronym.contains(queryLower)) score += 15
-            if (artistAcronym.contains(queryLower)) score += 12
-
-            Pair(song, score)
-        }.filter { it.second > 0 }
-            .sortedByDescending { it.second }
-            .map { it.first }
-
-        _displayedSongs.value = scoredSongs
-    }
-
-    private fun levenshteinDistance(s1: String, s2: String): Int {
-        val dp = Array(s1.length + 1) { IntArray(s2.length + 1) }
-        for (i in 0..s1.length) dp[i][0] = i
-        for (j in 0..s2.length) dp[0][j] = j
-        for (i in 1..s1.length) {
-            for (j in 1..s2.length) {
-                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + cost
-                )
-            }
+        val scoredSongs = _allSongs.value.mapNotNull { song ->
+            if (song.title.contains(queryLower, true) || song.artist.contains(queryLower, true)) song else null
         }
-        return dp[s1.length][s2.length]
+        _displayedSongs.value = scoredSongs
     }
 
     fun toggleShuffle() {
         _isShuffleEnabled.value = !_isShuffleEnabled.value
+        val playingSong = _currentSong.value
+
         if (_isShuffleEnabled.value) {
-            val playingSong = _currentSong.value
             val shuffled = PlaylistManager.smartShuffle(_allSongs.value)
             _displayedSongs.value = shuffled
 
+            // Sync current song if playing
             if (playingSong != null) {
                 val newIndex = shuffled.indexOfFirst { it.uri == playingSong.uri }
-                if (newIndex >= 0) {
-                    PlaylistManager.updateCurrentIndex(newIndex)
-                    _currentSong.value = shuffled[newIndex]
-                }
+                if (newIndex >= 0) PlaylistManager.updateCurrentIndex(newIndex)
             }
         } else {
-            val playingSong = _currentSong.value
-            filterSongs(_searchQuery.value)
+            // Revert to original order
+            filterSongs(_searchQuery.value) // Reset to normal list
+            val currentList = _displayedSongs.value
 
             if (playingSong != null) {
-                val newIndex = _displayedSongs.value.indexOfFirst { it.uri == playingSong.uri }
+                val newIndex = currentList.indexOfFirst { it.uri == playingSong.uri }
                 if (newIndex >= 0) {
-                    PlaylistManager.setPlaylistWithIndex(_displayedSongs.value, newIndex)
-                    _currentSong.value = _displayedSongs.value[newIndex]
+                    PlaylistManager.setPlaylistWithIndex(currentList, newIndex)
                 } else {
-                    PlaylistManager.setPlaylist(_displayedSongs.value)
+                    PlaylistManager.setPlaylist(currentList)
                 }
-            } else {
-                PlaylistManager.setPlaylist(_displayedSongs.value)
             }
         }
     }
 
     fun playSong(song: Song) {
         _currentSong.value = song
+        val index = _displayedSongs.value.indexOfFirst { it.uri == song.uri }
 
-        val index = _displayedSongs.value.indexOf(song)
-        if (index < 0) {
-            android.util.Log.e("MusicPlayer", "Song not found in displayedSongs: ${song.title}")
-            return
-        }
+        if (index < 0) return
 
-        val currentPlaylist = PlaylistManager.getPlaylist()
-        val isCurrentlyShuffle = PlaylistManager.isInShuffleMode()
-
-        val playlistMatches = currentPlaylist.size == _displayedSongs.value.size &&
-                currentPlaylist.indices.all { i ->
-                    currentPlaylist[i].uri == _displayedSongs.value[i].uri
-                }
-
-        if (isCurrentlyShuffle && playlistMatches) {
-            PlaylistManager.updateCurrentIndex(index)
+        // Update Backend
+        if (PlaylistManager.isInShuffleMode()) {
+            // If in shuffle mode, we might be clicking a song in the visible list
+            // We need to ensure the backend is aware of the exact list state
+            if (_displayedSongs.value.size == PlaylistManager.getPlaylist().size) {
+                PlaylistManager.updateCurrentIndex(index)
+            } else {
+                // Edge case: Search result click while in shuffle
+                PlaylistManager.setPlaylistWithIndex(_displayedSongs.value, index)
+            }
         } else {
             PlaylistManager.setPlaylistWithIndex(_displayedSongs.value, index)
-            if (_isShuffleEnabled.value) {
-                PlaylistManager.setShuffleModeEnabled(true)
-            }
         }
 
-        val verifyCurrentSong = PlaylistManager.getCurrentSong()
-        if (verifyCurrentSong?.uri != song.uri) {
-            android.util.Log.e("MusicPlayer",
-                "CRITICAL DESYNC! Expected: ${song.title}, Got: ${verifyCurrentSong?.title}")
-            PlaylistManager.setPlaylistWithIndex(_displayedSongs.value, index)
-        }
-
+        // Start Service
         val intent = Intent(context, MusicPlayerService::class.java).apply {
             action = MusicPlayerService.ACTION_PLAY
             putExtra(MusicPlayerService.EXTRA_URI, song.uri.toString())
@@ -247,21 +170,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             action = if (_isPlaying.value) MusicPlayerService.ACTION_PAUSE else MusicPlayerService.ACTION_RESUME
         }
         context.startService(intent)
-        _isPlaying.value = !_isPlaying.value
     }
 
     fun playNext() {
-        val intent = Intent(context, MusicPlayerService::class.java).apply {
+        context.startService(Intent(context, MusicPlayerService::class.java).apply {
             action = MusicPlayerService.ACTION_NEXT
-        }
-        context.startService(intent)
+        })
     }
 
     fun playPrevious() {
-        val intent = Intent(context, MusicPlayerService::class.java).apply {
+        context.startService(Intent(context, MusicPlayerService::class.java).apply {
             action = MusicPlayerService.ACTION_PREV
-        }
-        context.startService(intent)
+        })
     }
 
     fun seekTo(position: Long) {
@@ -272,23 +192,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         context.startService(intent)
     }
 
+    // --- KEY FIX HERE ---
     fun reorderSongs(fromIndex: Int, toIndex: Int) {
-        val songs = _displayedSongs.value.toMutableList()
-        if (fromIndex != toIndex && fromIndex >= 0 && fromIndex < songs.size
-            && toIndex >= 0 && toIndex < songs.size) {
+        val currentList = _displayedSongs.value.toMutableList()
 
-            val song = songs.removeAt(fromIndex)
-            songs.add(toIndex, song)
-            _displayedSongs.value = songs
+        if (fromIndex in currentList.indices && toIndex in currentList.indices) {
+            val item = currentList.removeAt(fromIndex)
+            currentList.add(toIndex, item)
 
+            // 1. Update UI Flow immediately
+            _displayedSongs.value = currentList
+
+            // 2. Tell Backend to update its internal index map
             PlaylistManager.reorderPlaylist(fromIndex, toIndex)
 
-            _currentSong.value?.let { current ->
-                val currentIndex = songs.indexOf(current)
-                if (currentIndex >= 0) {
-                    PlaylistManager.setPlaylistWithIndex(songs, currentIndex)
-                }
-            }
+            // 3. Ensure Current Song State is visually correct
+            // If the playing song was moved, we need to make sure the UI knows it's still the same song
+            // The PlaylistManager updates currentIndex internally, so getCurrentSong() returns the correct song object
+            _currentSong.value = PlaylistManager.getCurrentSong()
         }
     }
 
@@ -302,23 +223,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun extractPathFromUri(uri: Uri): String {
         val path = uri.path ?: return ""
-        return when {
-            path.contains(":") -> {
-                val split = path.split(":")
-                if (split.size >= 2) {
-                    "/" + split.last()
-                } else path
-            }
-            else -> path
-        }
+        return if (path.contains(":")) "/"+path.split(":").last() else path
     }
 
-    fun expandPlayer() {
-        _isPlayerExpanded.value = true
-    }
-
-    fun collapsePlayer() {
-        _isPlayerExpanded.value = false
-    }
+    fun expandPlayer() { _isPlayerExpanded.value = true }
+    fun collapsePlayer() { _isPlayerExpanded.value = false }
 }
-

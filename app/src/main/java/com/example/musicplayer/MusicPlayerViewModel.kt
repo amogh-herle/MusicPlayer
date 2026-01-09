@@ -233,10 +233,3 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun expandPlayer() { _isPlayerExpanded.value = true }
     fun collapsePlayer() { _isPlayerExpanded.value = false }
 }
-// In your ViewModel, add:
-private val _isRepeatEnabled = MutableStateFlow(false)
-val isRepeatEnabled: StateFlow<Boolean> = _isRepeatEnabled.asStateFlow()
-
-fun toggleRepeat() {
-    _isRepeatEnabled.value = !_isRepeatEnabled.value
-}

@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white" alt="Compose">
   <img src="https://img.shields.io/badge/Android-15%20(API%2035)-3DDC84?logo=android&logoColor=white" alt="Android">
   <img src="https://img.shields.io/badge/Min%20SDK-26-orange" alt="Min SDK">
-  <img src="https://img.shields.io/github/license/amogh-herle/MusicPlayer" alt="License">
+  <img src="https://img.shields.io/github/license/amogh-herle/MusicPlayer?v=1" alt="License">
 </p>
 
 <p align="center">

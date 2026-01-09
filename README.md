@@ -101,7 +101,7 @@ app/src/main/java/com/example/musicplayer/
 1. **[Download the latest APK](https://github.com/amogh-herle/MusicPlayer/releases/latest)**
 2. Install on your Android phone
    - Enable "Install from unknown sources" if prompted
-3. Place music files in `/Music/MySpotifyBackup` on your phone
+3. App will search for audio files in `/Music/MySongs` on your phone,u can change it in the hamburger icon.
 4. Grant audio permissions when prompted
 
 ### Option 2: Build from Source
@@ -141,7 +141,7 @@ cd MusicPlayer
 ## 🔧 Configuration
 
 ### Changing Default Music Directory
-By default, the app scans `/Music/MySpotifyBackup`. To change:
+By default, the app scans `/Music/MyMusic`. To change:
 1. Open the Navigation Drawer (hamburger menu)
 2. Tap "Change Music Directory"
 3. Select your music folder using the system picker

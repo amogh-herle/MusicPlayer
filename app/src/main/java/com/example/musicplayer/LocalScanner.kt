@@ -10,7 +10,7 @@ import com.example.musicplayer.data.Song
 object LocalScanner {
     private const val PREFS_NAME = "music_player_prefs"
     private const val KEY_MUSIC_DIRECTORY = "music_directory"
-    private const val DEFAULT_DIRECTORY = "/Music/MySpotifyBackup"
+    private const val DEFAULT_DIRECTORY = "/Music/MySongs"
 
     fun getMusicDirectory(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

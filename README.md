@@ -31,7 +31,7 @@
 | Feature | Description |
 |---------|-------------|
 | **Offline-First** | Plays `.mp3` and `.m4a` files directly from local storage |
-| **Targeted Scanning** | Scans `/Music/MySpotifyBackup` by default (avoids WhatsApp/ringtones clutter) |
+| **Targeted Scanning** | Scans `/Music/MySongs` by default (avoids WhatsApp/ringtones clutter) |
 | **Background Playback** | Full Android 15 `MediaSessionService` with `foregroundServiceType="mediaPlayback"` |
 | **Audio Focus** | Automatically pauses when other apps take audio (calls, YouTube, etc.) |
 | **Smart Shuffle** | Custom algorithm ensuring no two songs from the same artist play back-to-back |

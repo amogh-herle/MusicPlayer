@@ -3,7 +3,7 @@
 # ============================================================================
 
 # Gradle build directories
-.gradle/
+/.gradle
 build/
 **/build/
 

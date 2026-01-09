@@ -43,7 +43,6 @@
 | **Expandable Full Player** | Smooth animation from Mini → Full Screen |
 | **Material 3 Dark Theme** | Modern design with vibrant Cyan/Purple accents |
 | **Album Art Everywhere** | List items, full player, and system notification |
-| **Animated Glow Effects** | Pulsing glow on album art when playing |
 
 ### 📋 Queue & Library Management
 | Feature | Description |

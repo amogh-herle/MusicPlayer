@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white" alt="Compose">
   <img src="https://img.shields.io/badge/Android-15%20(API%2035)-3DDC84?logo=android&logoColor=white" alt="Android">
   <img src="https://img.shields.io/badge/Min%20SDK-26-orange" alt="Min SDK">
-  <img src="https://img.shields.io/github/license/amogh-herle/MusicPlayer" alt="License">
+  <img src="https://img.shields.io/github/license/amogh-herle/MusicPlayer?v=1" alt="License">
 </p>
 
 <p align="center">
@@ -43,7 +43,6 @@
 | **Expandable Full Player** | Smooth animation from Mini → Full Screen |
 | **Material 3 Dark Theme** | Modern design with vibrant Cyan/Purple accents |
 | **Album Art Everywhere** | List items, full player, and system notification |
-| **Animated Glow Effects** | Pulsing glow on album art when playing |
 
 ### 📋 Queue & Library Management
 | Feature | Description |
@@ -101,7 +100,7 @@ app/src/main/java/com/example/musicplayer/
 1. **[Download the latest APK](https://github.com/amogh-herle/MusicPlayer/releases/latest)**
 2. Install on your Android phone
    - Enable "Install from unknown sources" if prompted
-3. Place music files in `/Music/MySpotifyBackup` on your phone
+3. App will search for audio files in `/Music/MySongs` on your phone,u can change it in the hamburger icon.
 4. Grant audio permissions when prompted
 
 ### Option 2: Build from Source
@@ -141,7 +140,7 @@ cd MusicPlayer
 ## 🔧 Configuration
 
 ### Changing Default Music Directory
-By default, the app scans `/Music/MySpotifyBackup`. To change:
+By default, the app scans `/Music/MyMusic`. To change:
 1. Open the Navigation Drawer (hamburger menu)
 2. Tap "Change Music Directory"
 3. Select your music folder using the system picker

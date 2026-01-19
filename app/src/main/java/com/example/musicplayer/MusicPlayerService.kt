@@ -454,6 +454,20 @@ class MusicPlayerService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+
+        // Stop music when user swipes the app away from recent apps
+        pause()
+
+        // Stop the service and remove the notification
+        stopSelf()
+
+        // Ensure notification is removed
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID)
+    }
+
     override fun onDestroy() {
         stopProgressUpdates()
         unregisterNoisyReceiver()

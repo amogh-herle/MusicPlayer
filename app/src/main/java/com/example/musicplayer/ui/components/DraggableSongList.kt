@@ -52,9 +52,9 @@ fun DraggableSongList(
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
     onReorder: (fromIndex: Int, toIndex: Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState()
 ) {
-    val listState = rememberLazyListState()
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current

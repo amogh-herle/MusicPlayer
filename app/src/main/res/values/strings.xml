@@ -1,8 +1,8 @@
 <resources>
-    <string name="app_name">MusicPlayer</string>
-    <string name="widget_description">Music player controls</string>
     <string name="album_art">Album Art</string>
     <string name="previous">Previous</string>
     <string name="play_pause">Play/Pause</string>
     <string name="next">Next</string>
+    <string name="app_name">Music Player</string>
+    <string name="widget_description">Control music playback from your home screen</string>
 </resources>

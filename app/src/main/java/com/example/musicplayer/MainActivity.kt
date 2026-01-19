@@ -38,7 +38,12 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions.values.all { it }
-        if (granted) viewModel.loadSongs(contentResolver)
+        if (granted) {
+            // Only load if playlist is empty
+            if (!PlaylistManager.hasPlaylist()) {
+                viewModel.loadSongs(contentResolver)
+            }
+        }
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -46,7 +51,7 @@ class MainActivity : ComponentActivity() {
     ) { uri: Uri? ->
         uri?.let { selectedUri ->
             viewModel.setMusicDirectory(selectedUri)
-            viewModel.loadSongs(contentResolver)
+            viewModel.loadSongs(contentResolver) // Force reload on directory change
         }
     }
 
@@ -66,13 +71,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // FIXED: Only load songs if permission granted AND playlist empty
         checkAndRequestPermissions()
     }
 
     override fun onResume() {
         super.onResume()
 
-        // Check if POST_NOTIFICATIONS permission has been revoked by auto-reset
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -83,9 +88,6 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
         }
-
-        // Check battery optimization status
-        checkBatteryOptimization()
     }
 
     private fun checkAndRequestPermissions() {
@@ -96,7 +98,10 @@ class MainActivity : ComponentActivity() {
         }
 
         if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
-            viewModel.loadSongs(contentResolver)
+            // FIXED: Only load if playlist is empty (first launch)
+            if (!PlaylistManager.hasPlaylist()) {
+                viewModel.loadSongs(contentResolver)
+            }
         }
     }
 
@@ -109,43 +114,6 @@ class MainActivity : ComponentActivity() {
             perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         permissionLauncher.launch(perms.toTypedArray())
-    }
-
-    private fun checkBatteryOptimization() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
-            val packageName = packageName
-
-            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
-                // Show a dialog/toast informing user about battery optimization
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Battery Optimization")
-                    .setMessage("To keep music playing in the background, please disable battery optimization for this app.\n\nThis is especially important on Samsung/OneUI devices.")
-                    .setPositiveButton("Settings") { _, _ ->
-                        try {
-                            val intent = android.content.Intent(
-                                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                android.net.Uri.parse("package:$packageName")
-                            )
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            // Fallback to general battery settings
-                            try {
-                                val intent = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                startActivity(intent)
-                            } catch (ex: Exception) {
-                                android.widget.Toast.makeText(
-                                    this,
-                                    "Please manually disable battery optimization in Settings > Apps",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    }
-                    .setNegativeButton("Later", null)
-                    .show()
-            }
-        }
     }
 }
 
@@ -170,13 +138,11 @@ fun MusicPlayerApp(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
-    // Handle back press when player is expanded
     BackHandler(enabled = isPlayerExpanded) {
         viewModel.collapsePlayer()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Main content with drawer
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
@@ -189,7 +155,8 @@ fun MusicPlayerApp(
                     },
                     onRefresh = {
                         scope.launch { drawerState.close() }
-                        onRequestPermission()
+                        // FIXED: Force reload when user explicitly requests refresh
+                        viewModel.forceRefresh()
                     }
                 )
             }
@@ -209,7 +176,6 @@ fun MusicPlayerApp(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer
                             )
                         )
-                        // Search bar
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = viewModel::updateSearchQuery,
@@ -232,7 +198,6 @@ fun MusicPlayerApp(
                     }
                 },
                 bottomBar = {
-                    // Bottom bar with shuffle button
                     BottomAppBar {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -247,7 +212,6 @@ fun MusicPlayerApp(
                     }
                 }
             ) { innerPadding ->
-                // Song list with extra padding at bottom for mini player
                 SongList(
                     songs = songs,
                     currentSong = currentSong,
@@ -264,7 +228,6 @@ fun MusicPlayerApp(
             }
         }
 
-        // Mini Player overlay (shows when not expanded and song is playing)
         AnimatedVisibility(
             visible = currentSong != null && !isPlayerExpanded,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -283,12 +246,11 @@ fun MusicPlayerApp(
                     onPrevious = viewModel::playPrevious,
                     onSeek = viewModel::seekTo,
                     onClick = viewModel::expandPlayer,
-                    modifier = Modifier.padding(bottom = 80.dp) // Above bottom bar
+                    modifier = Modifier.padding(bottom = 80.dp)
                 )
             }
         }
 
-        // Full Screen Player overlay
         AnimatedVisibility(
             visible = isPlayerExpanded && currentSong != null,
             enter = slideInVertically(
@@ -335,7 +297,6 @@ private fun DrawerContent(
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-        // Current directory info
         Text(
             text = "Current Directory",
             style = MaterialTheme.typography.labelMedium,
@@ -343,7 +304,7 @@ private fun DrawerContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = currentMusicDirectory.ifEmpty { "/Music/MySpotifyBackup" },
+            text = currentMusicDirectory.ifEmpty { "/Music/MySongs" },
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant

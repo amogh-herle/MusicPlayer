@@ -4,25 +4,82 @@ import android.content.Context
 import android.net.Uri
 import com.example.musicplayer.data.Song
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import java.io.File
 
 object PlaylistManager {
     private lateinit var context: Context
     private val gson = Gson()
-
-    private val prefs by lazy {
-        context.getSharedPreferences("playlist_prefs", Context.MODE_PRIVATE)
-    }
 
     private var songs: MutableList<Song> = mutableListOf()
     private var currentIndex: Int = 0
     private var isShuffleModeActive = false
     private var hasManualChanges = false
 
+    data class SerializableSong(
+        val uriString: String,
+        val title: String,
+        val artist: String,
+        val album: String,
+        val duration: Long,
+        val albumId: Long,
+        val albumArtUriString: String?
+    )
+
+    data class PlaylistState(
+        val songs: List<SerializableSong>,
+        val currentIndex: Int
+    )
+
     fun initialize(appContext: Context) {
         if (!::context.isInitialized) {
             context = appContext.applicationContext
-            restorePlaylist()
+        }
+    }
+
+    fun saveState() {
+        val serializableSongs = songs.map {
+            SerializableSong(
+                uriString = it.uri.toString(),
+                title = it.title,
+                artist = it.artist,
+                album = it.album,
+                duration = it.duration,
+                albumId = it.albumId,
+                albumArtUriString = it.albumArtUri?.toString()
+            )
+        }
+        val state = PlaylistState(serializableSongs, currentIndex)
+        val json = gson.toJson(state)
+        try {
+            context.openFileOutput("playlist_state.json", Context.MODE_PRIVATE).use { output ->
+                output.write(json.toByteArray())
+            }
+        } catch (e: Exception) {
+            // Handle error
+        }
+    }
+
+    fun restoreState(): Boolean {
+        return try {
+            val file = File(context.filesDir, "playlist_state.json")
+            if (!file.exists()) return false
+            val json = file.readText()
+            val state = gson.fromJson(json, PlaylistState::class.java)
+            songs = state.songs.map {
+                Song(
+                    uri = Uri.parse(it.uriString),
+                    title = it.title,
+                    artist = it.artist,
+                    album = it.album,
+                    duration = it.duration,
+                    albumId = it.albumId,
+                    albumArtUri = it.albumArtUriString?.let { Uri.parse(it) }
+                )
+            }.toMutableList()
+            currentIndex = state.currentIndex
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -34,19 +91,19 @@ object PlaylistManager {
         currentIndex = 0
         isShuffleModeActive = false
         hasManualChanges = false
-        savePlaylist()
+        saveState()
     }
 
     fun setPlaylistWithIndex(newSongs: List<Song>, index: Int) {
         songs = newSongs.toMutableList()
         currentIndex = index.coerceIn(0, songs.size - 1)
         hasManualChanges = true
-        savePlaylist()
+        saveState()
     }
 
     fun updateCurrentIndex(index: Int) {
         currentIndex = index.coerceIn(0, songs.size - 1)
-        savePlaylist()
+        saveState()
     }
 
     fun getCurrentSong(): Song? {
@@ -63,7 +120,7 @@ object PlaylistManager {
             currentIndex = 0
             isShuffleModeActive = true
         }
-        savePlaylist()
+        saveState()
         return getCurrentSong()
     }
 
@@ -71,14 +128,14 @@ object PlaylistManager {
         if (songs.isEmpty()) return null
 
         currentIndex = if (currentIndex > 0) currentIndex - 1 else 0
-        savePlaylist()
+        saveState()
         return getCurrentSong()
     }
 
     fun playSongAt(index: Int): Song? {
         if (index in songs.indices) {
             currentIndex = index
-            savePlaylist()
+            saveState()
             return getCurrentSong()
         }
         return null
@@ -89,7 +146,7 @@ object PlaylistManager {
         songs = shuffled
         currentIndex = 0
         isShuffleModeActive = true
-        savePlaylist()
+        saveState()
         return shuffled
     }
 
@@ -108,71 +165,11 @@ object PlaylistManager {
         }
 
         hasManualChanges = true
-        savePlaylist()
+        saveState()
         return songs.toList()
     }
 
     fun getPlaylist(): List<Song> = songs.toList()
-
-    private fun savePlaylist() {
-        val uriStrings = songs.map { it.uri.toString() }
-        val json = gson.toJson(uriStrings)
-        prefs.edit()
-            .putString("saved_uris", json)
-            .putInt("current_index", currentIndex)
-            .apply()
-    }
-
-    private fun restorePlaylist() {
-        val json = prefs.getString("saved_uris", null)
-        currentIndex = prefs.getInt("current_index", 0)
-
-        if (json != null) {
-            try {
-                val type = object : TypeToken<List<String>>() {}.type
-                val uriStrings: List<String> = gson.fromJson(json, type)
-                val contentResolver = context.contentResolver
-
-                songs = uriStrings.mapNotNull { uriString ->
-                    try {
-                        val uri = Uri.parse(uriString)
-                        // Re-query song metadata from MediaStore
-                        val cursor = contentResolver.query(
-                            uri,
-                            arrayOf(
-                                android.provider.MediaStore.Audio.Media.TITLE,
-                                android.provider.MediaStore.Audio.Media.ARTIST,
-                                android.provider.MediaStore.Audio.Media.ALBUM,
-                                android.provider.MediaStore.Audio.Media.ALBUM_ID,
-                                android.provider.MediaStore.Audio.Media.DURATION
-                            ),
-                            null,
-                            null,
-                            null
-                        )?.use { c ->
-                            if (c.moveToFirst()) {
-                                val albumId = c.getLong(c.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.ALBUM_ID))
-                                Song(
-                                    uri = uri,
-                                    title = c.getString(0) ?: "Unknown",
-                                    artist = c.getString(1) ?: "Unknown Artist",
-                                    album = c.getString(2) ?: "Unknown Album",
-                                    duration = c.getLong(4),
-                                    albumId = albumId,
-                                    albumArtUri = Uri.parse("content://media/external/audio/albumart/$albumId")
-                                )
-                            } else null
-                        }
-                        cursor
-                    } catch (e: Exception) {
-                        null
-                    }
-                }.toMutableList()
-            } catch (e: Exception) {
-                songs = mutableListOf()
-            }
-        }
-    }
 
     fun hasPlaylist(): Boolean = songs.isNotEmpty()
 }

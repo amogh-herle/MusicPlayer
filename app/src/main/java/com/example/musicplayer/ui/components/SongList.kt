@@ -1,6 +1,7 @@
 package com.example.musicplayer.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -10,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.musicplayer.PlaylistManager
 import com.example.musicplayer.data.Song
+import kotlinx.coroutines.launch
 
 @Composable
 fun SongList(
@@ -69,7 +71,7 @@ private fun EmptyLibraryView(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Looking in: ${currentMusicDirectory.ifEmpty { "/Music/MySpotifyBackup" }}",
+                text = "Looking in: ${currentMusicDirectory.ifEmpty { "/Music/MySongs" }}",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -112,6 +114,25 @@ private fun SongListContent(
     onSongClick: (Song) -> Unit,
     onReorderSongs: (Int, Int) -> Unit
 ) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+
+    // Auto-scroll to playing song when it changes
+    LaunchedEffect(currentSong?.uri) {
+        currentSong?.let { song ->
+            val index = songs.indexOfFirst { it.uri == song.uri }
+            if (index >= 0) {
+                scope.launch {
+                    // Smooth scroll to center the playing song
+                    listState.animateScrollToItem(
+                        index = index,
+                        scrollOffset = -200 // Offset to center it better
+                    )
+                }
+            }
+        }
+    }
+
     Column {
         // Header with song count
         Text(
@@ -159,12 +180,13 @@ private fun SongListContent(
             }
         }
 
-        // Use the new DraggableSongList
+        // Pass listState to DraggableSongList
         DraggableSongList(
             songs = songs,
             currentSong = currentSong,
             onSongClick = onSongClick,
             onReorder = onReorderSongs,
+            listState = listState, // Pass the shared state
             modifier = Modifier.fillMaxSize()
         )
     }

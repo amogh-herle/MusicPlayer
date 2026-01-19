@@ -55,8 +55,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // Initialize PlaylistManager with context
         PlaylistManager.initialize(context)
 
-        // Restore saved playlist if available
-        if (PlaylistManager.hasPlaylist()) {
+        // Try to restore saved playlist state
+        if (PlaylistManager.restoreState()) {
             val restoredPlaylist = PlaylistManager.getPlaylist()
             _allSongs.value = restoredPlaylist
             _displayedSongs.value = restoredPlaylist
@@ -89,6 +89,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun loadSongs(contentResolver: ContentResolver) {
+        if (_allSongs.value.isNotEmpty()) return // Already restored, no need to scan
         val targetDir = LocalScanner.getMusicDirectory(context)
         val scanned = LocalScanner.scanMusicFolder(contentResolver, targetDir)
         _allSongs.value = scanned
@@ -215,7 +216,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         context.startService(intent)
     }
 
-    // --- KEY FIX HERE ---
     fun reorderSongs(fromIndex: Int, toIndex: Int) {
         val currentList = _displayedSongs.value.toMutableList()
         if (fromIndex !in currentList.indices || toIndex !in currentList.indices) return
@@ -255,4 +255,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun expandPlayer() { _isPlayerExpanded.value = true }
     fun collapsePlayer() { _isPlayerExpanded.value = false }
+
+    fun forceRefresh() {
+        val targetDir = LocalScanner.getMusicDirectory(context)
+        val scanned = LocalScanner.scanMusicFolder(context.contentResolver, targetDir)
+        _allSongs.value = scanned
+        _displayedSongs.value = scanned
+        _isShuffleEnabled.value = false
+        PlaylistManager.setPlaylist(scanned)
+
+        // Show toast to user
+        android.widget.Toast.makeText(
+            context,
+            "Library refreshed: ${scanned.size} songs found",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
 }

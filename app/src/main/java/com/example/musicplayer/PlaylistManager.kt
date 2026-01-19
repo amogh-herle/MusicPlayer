@@ -1,109 +1,178 @@
 package com.example.musicplayer
 
+import android.content.Context
+import android.net.Uri
 import com.example.musicplayer.data.Song
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 object PlaylistManager {
-    private var playlist: MutableList<Song> = mutableListOf()
-    private var currentIndex = 0
-    private var isShuffleMode = false
-    private var originalSongs: List<Song> = emptyList()
-    private var hasManualReorder = false
+    private lateinit var context: Context
+    private val gson = Gson()
 
-    fun setPlaylist(songs: List<Song>) {
-        playlist = songs.toMutableList()
-        currentIndex = 0
-        isShuffleMode = false
-        originalSongs = emptyList()
-        hasManualReorder = false
+    private val prefs by lazy {
+        context.getSharedPreferences("playlist_prefs", Context.MODE_PRIVATE)
     }
 
-    fun setPlaylistWithIndex(songs: List<Song>, index: Int) {
-        playlist = songs.toMutableList()
-        currentIndex = index.coerceIn(0, maxOf(0, songs.size - 1))
-        isShuffleMode = false
-        originalSongs = emptyList()
-        hasManualReorder = false
+    private var songs: MutableList<Song> = mutableListOf()
+    private var currentIndex: Int = 0
+    private var isShuffleModeActive = false
+    private var hasManualChanges = false
+
+    fun initialize(appContext: Context) {
+        if (!::context.isInitialized) {
+            context = appContext.applicationContext
+            restorePlaylist()
+        }
+    }
+
+    fun isInShuffleMode(): Boolean = isShuffleModeActive
+    fun hasManualChanges(): Boolean = hasManualChanges
+
+    fun setPlaylist(newSongs: List<Song>) {
+        songs = newSongs.toMutableList()
+        currentIndex = 0
+        isShuffleModeActive = false
+        hasManualChanges = false
+        savePlaylist()
+    }
+
+    fun setPlaylistWithIndex(newSongs: List<Song>, index: Int) {
+        songs = newSongs.toMutableList()
+        currentIndex = index.coerceIn(0, songs.size - 1)
+        hasManualChanges = true
+        savePlaylist()
     }
 
     fun updateCurrentIndex(index: Int) {
-        currentIndex = index.coerceIn(0, maxOf(0, playlist.size - 1))
+        currentIndex = index.coerceIn(0, songs.size - 1)
+        savePlaylist()
     }
 
-    fun smartShuffle(songs: List<Song>): List<Song> {
-        if (songs.size <= 2) return songs.shuffled()
-
-        val shuffled = songs.shuffled().toMutableList()
-        // Simple heuristic to break artist clumps
-        repeat(3) {
-            for (i in 0 until shuffled.size - 1) {
-                if (shuffled[i].artist.equals(shuffled[i + 1].artist, ignoreCase = true)) {
-                    for (j in i + 2 until shuffled.size) {
-                        if (!shuffled[j].artist.equals(shuffled[i].artist, ignoreCase = true)) {
-                            val temp = shuffled[i + 1]
-                            shuffled[i + 1] = shuffled[j]
-                            shuffled[j] = temp
-                            break
-                        }
-                    }
-                }
-            }
-        }
-        playlist = shuffled
-        currentIndex = 0
-        isShuffleMode = true
-        originalSongs = songs
-        hasManualReorder = false
-        return shuffled
+    fun getCurrentSong(): Song? {
+        return songs.getOrNull(currentIndex)
     }
-
-    fun getCurrentSong(): Song? = playlist.getOrNull(currentIndex)
 
     fun nextSong(): Song? {
-        if (playlist.isEmpty()) return null
+        if (songs.isEmpty()) return null
 
-        if (currentIndex >= playlist.size - 1) {
-            // End of list logic
-            if (hasManualReorder) {
-                currentIndex = 0 // Loop if manually ordered
-            } else if (isShuffleMode && originalSongs.isNotEmpty()) {
-                smartShuffle(originalSongs) // Reshuffle if in auto mode
-            } else {
-                currentIndex = 0 // Loop normal
-            }
-        } else {
-            currentIndex++
+        currentIndex++
+        if (currentIndex >= songs.size) {
+            // Infinite playback: reshuffle and start over
+            smartShuffle(songs)
+            currentIndex = 0
+            isShuffleModeActive = true
         }
+        savePlaylist()
         return getCurrentSong()
     }
 
     fun previousSong(): Song? {
-        if (playlist.isEmpty()) return null
-        if (currentIndex > 0) currentIndex--
+        if (songs.isEmpty()) return null
+
+        currentIndex = if (currentIndex > 0) currentIndex - 1 else 0
+        savePlaylist()
         return getCurrentSong()
     }
 
-    fun getPlaylist(): List<Song> = playlist.toList()
+    fun playSongAt(index: Int): Song? {
+        if (index in songs.indices) {
+            currentIndex = index
+            savePlaylist()
+            return getCurrentSong()
+        }
+        return null
+    }
+
+    fun smartShuffle(songList: List<Song>): List<Song> {
+        val shuffled = songList.shuffled().toMutableList()
+        songs = shuffled
+        currentIndex = 0
+        isShuffleModeActive = true
+        savePlaylist()
+        return shuffled
+    }
 
     fun reorderPlaylist(fromIndex: Int, toIndex: Int): List<Song> {
-        if (fromIndex !in playlist.indices || toIndex !in playlist.indices) return playlist
+        if (fromIndex !in songs.indices || toIndex !in songs.indices) return songs
 
-        val item = playlist.removeAt(fromIndex)
-        playlist.add(toIndex, item)
+        val moved = songs.removeAt(fromIndex)
+        songs.add(toIndex, moved)
 
-        // Adjust currentIndex to keep the playing song aligned
+        // Update currentIndex if the playing song was moved
         currentIndex = when {
-            fromIndex == toIndex -> currentIndex
             fromIndex == currentIndex -> toIndex
             fromIndex < currentIndex && toIndex >= currentIndex -> currentIndex - 1
             fromIndex > currentIndex && toIndex <= currentIndex -> currentIndex + 1
             else -> currentIndex
-        }.coerceIn(0, playlist.lastIndex)
+        }
 
-        return playlist.toList()
+        hasManualChanges = true
+        savePlaylist()
+        return songs.toList()
     }
 
+    fun getPlaylist(): List<Song> = songs.toList()
 
-    fun isInShuffleMode(): Boolean = isShuffleMode
-    fun setShuffleModeEnabled(enabled: Boolean) { isShuffleMode = enabled }
-    fun hasManualChanges(): Boolean = hasManualReorder
+    private fun savePlaylist() {
+        val uriStrings = songs.map { it.uri.toString() }
+        val json = gson.toJson(uriStrings)
+        prefs.edit()
+            .putString("saved_uris", json)
+            .putInt("current_index", currentIndex)
+            .apply()
+    }
+
+    private fun restorePlaylist() {
+        val json = prefs.getString("saved_uris", null)
+        currentIndex = prefs.getInt("current_index", 0)
+
+        if (json != null) {
+            try {
+                val type = object : TypeToken<List<String>>() {}.type
+                val uriStrings: List<String> = gson.fromJson(json, type)
+                val contentResolver = context.contentResolver
+
+                songs = uriStrings.mapNotNull { uriString ->
+                    try {
+                        val uri = Uri.parse(uriString)
+                        // Re-query song metadata from MediaStore
+                        val cursor = contentResolver.query(
+                            uri,
+                            arrayOf(
+                                android.provider.MediaStore.Audio.Media.TITLE,
+                                android.provider.MediaStore.Audio.Media.ARTIST,
+                                android.provider.MediaStore.Audio.Media.ALBUM,
+                                android.provider.MediaStore.Audio.Media.ALBUM_ID,
+                                android.provider.MediaStore.Audio.Media.DURATION
+                            ),
+                            null,
+                            null,
+                            null
+                        )?.use { c ->
+                            if (c.moveToFirst()) {
+                                val albumId = c.getLong(c.getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.ALBUM_ID))
+                                Song(
+                                    uri = uri,
+                                    title = c.getString(0) ?: "Unknown",
+                                    artist = c.getString(1) ?: "Unknown Artist",
+                                    album = c.getString(2) ?: "Unknown Album",
+                                    duration = c.getLong(4),
+                                    albumId = albumId,
+                                    albumArtUri = Uri.parse("content://media/external/audio/albumart/$albumId")
+                                )
+                            } else null
+                        }
+                        cursor
+                    } catch (e: Exception) {
+                        null
+                    }
+                }.toMutableList()
+            } catch (e: Exception) {
+                songs = mutableListOf()
+            }
+        }
+    }
+
+    fun hasPlaylist(): Boolean = songs.isNotEmpty()
 }

@@ -69,6 +69,25 @@ class MainActivity : ComponentActivity() {
         checkAndRequestPermissions()
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        // Check if POST_NOTIFICATIONS permission has been revoked by auto-reset
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                android.widget.Toast.makeText(
+                    this,
+                    "Notification permission was revoked. Music player notifications may not appear.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+        // Check battery optimization status
+        checkBatteryOptimization()
+    }
+
     private fun checkAndRequestPermissions() {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
@@ -90,6 +109,43 @@ class MainActivity : ComponentActivity() {
             perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
         permissionLauncher.launch(perms.toTypedArray())
+    }
+
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val packageName = packageName
+
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                // Show a dialog/toast informing user about battery optimization
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Battery Optimization")
+                    .setMessage("To keep music playing in the background, please disable battery optimization for this app.\n\nThis is especially important on Samsung/OneUI devices.")
+                    .setPositiveButton("Settings") { _, _ ->
+                        try {
+                            val intent = android.content.Intent(
+                                android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                android.net.Uri.parse("package:$packageName")
+                            )
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            // Fallback to general battery settings
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                startActivity(intent)
+                            } catch (ex: Exception) {
+                                android.widget.Toast.makeText(
+                                    this,
+                                    "Please manually disable battery optimization in Settings > Apps",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                    }
+                    .setNegativeButton("Later", null)
+                    .show()
+            }
+        }
     }
 }
 

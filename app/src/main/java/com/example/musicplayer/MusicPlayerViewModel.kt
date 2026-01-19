@@ -52,6 +52,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         get() = getApplication()
 
     init {
+        // Initialize PlaylistManager with context
+        PlaylistManager.initialize(context)
+
+        // Restore saved playlist if available
+        if (PlaylistManager.hasPlaylist()) {
+            val restoredPlaylist = PlaylistManager.getPlaylist()
+            _allSongs.value = restoredPlaylist
+            _displayedSongs.value = restoredPlaylist
+            _currentSong.value = PlaylistManager.getCurrentSong()
+        }
+
         _currentMusicDirectory.value = LocalScanner.getMusicDirectory(context)
 
         // Collect playback state updates
@@ -106,21 +117,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun toggleShuffle() {
         _isShuffleEnabled.value = !_isShuffleEnabled.value
-        val playingSong = _currentSong.value
 
         if (_isShuffleEnabled.value) {
+            // Shuffle the list and immediately play the first song
             val shuffled = PlaylistManager.smartShuffle(_allSongs.value)
             _displayedSongs.value = shuffled
 
-            // Sync current song if playing
-            if (playingSong != null) {
-                val newIndex = shuffled.indexOfFirst { it.uri == playingSong.uri }
-                if (newIndex >= 0) PlaylistManager.updateCurrentIndex(newIndex)
+            // Immediately play the first song in the shuffled list
+            val firstSong = shuffled.firstOrNull()
+            if (firstSong != null) {
+                _currentSong.value = firstSong
+
+                // Start playing the first shuffled song
+                val intent = Intent(context, MusicPlayerService::class.java).apply {
+                    action = MusicPlayerService.ACTION_PLAY
+                    putExtra(MusicPlayerService.EXTRA_URI, firstSong.uri.toString())
+                    putExtra(MusicPlayerService.EXTRA_TITLE, firstSong.title)
+                    putExtra(MusicPlayerService.EXTRA_ARTIST, firstSong.artist)
+                    putExtra(MusicPlayerService.EXTRA_ALBUM_ID, firstSong.albumId)
+                }
+                ContextCompat.startForegroundService(context, intent)
+                _isPlaying.value = true
             }
         } else {
             // Revert to original order
             filterSongs(_searchQuery.value) // Reset to normal list
             val currentList = _displayedSongs.value
+            val playingSong = _currentSong.value
 
             if (playingSong != null) {
                 val newIndex = currentList.indexOfFirst { it.uri == playingSong.uri }

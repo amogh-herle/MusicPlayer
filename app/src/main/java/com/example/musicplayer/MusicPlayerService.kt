@@ -89,6 +89,15 @@ class MusicPlayerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Recreate notification channel every time to ensure it exists
+        // This protects against Android's background restrictions and channel corruption
+        createNotificationChannel()
+
+        // Start foreground immediately with a placeholder notification if needed
+        if (currentUri == null) {
+            startForegroundWithPlaceholder()
+        }
+
         when (intent?.action) {
             ACTION_PLAY -> {
                 val uriString = intent.getStringExtra(EXTRA_URI)
@@ -205,6 +214,7 @@ class MusicPlayerService : Service() {
         updateNotification()
         stopProgressUpdates()
         broadcastProgress()
+        updateWidget()
     }
 
     private fun resume() {
@@ -213,6 +223,7 @@ class MusicPlayerService : Service() {
         updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         updateNotification()
         startProgressUpdates()
+        updateWidget()
     }
 
     private fun seekTo(position: Long) {
@@ -269,6 +280,25 @@ class MusicPlayerService : Service() {
         MusicPlaybackState.updateCurrentSong(
             title = currentTitle,
             artist = currentArtist,
+            albumId = currentAlbumId
+        )
+
+        // Update widget
+        MusicWidgetProvider.updateWidget(
+            context = this,
+            title = currentTitle,
+            artist = currentArtist,
+            isPlaying = isPlaying,
+            albumId = currentAlbumId
+        )
+    }
+
+    private fun updateWidget() {
+        MusicWidgetProvider.updateWidget(
+            context = this,
+            title = currentTitle,
+            artist = currentArtist,
+            isPlaying = isPlaying,
             albumId = currentAlbumId
         )
     }
@@ -369,13 +399,40 @@ class MusicPlayerService : Service() {
     }
 
     private fun createNotificationChannel() {
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Music Playback", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Music player controls"
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-        )
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        // Use IMPORTANCE_LOW to prevent sound/vibration but keep notification visible
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Music Playback",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Music player controls"
+            setShowBadge(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            // Disable sound and vibration
+            setSound(null, null)
+            enableVibration(false)
+            enableLights(false)
+        }
+
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    private fun startForegroundWithPlaceholder() {
+        try {
+            val placeholderNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Loading...")
+                .setContentText("Preparing music player")
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .build()
+
+            startForeground(NOTIFICATION_ID, placeholderNotification)
+        } catch (e: Exception) {
+            android.util.Log.e("MusicPlayerService", "Error starting foreground: ${e.message}")
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

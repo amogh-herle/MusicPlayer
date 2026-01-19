@@ -5,7 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.AudioAttributes
@@ -54,6 +57,17 @@ class MusicPlayerService : Service() {
     private var currentAlbumArt: Bitmap? = null
     private var isPlaying = false
     private val handler = Handler(Looper.getMainLooper())
+    private var isNoisyReceiverRegistered = false
+
+    // Receiver to handle audio becoming "noisy" (e.g., Bluetooth disconnect, headphones unplugged)
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                // Pause playback immediately when Bluetooth disconnects or headphones are unplugged
+                pause()
+            }
+        }
+    }
 
     private val progressRunnable = object : Runnable {
         override fun run() {
@@ -197,6 +211,7 @@ class MusicPlayerService : Service() {
                 prepareAsync()
             }
             startForegroundWithNotification()
+            registerNoisyReceiver()
         } catch (e: Exception) {
             e.printStackTrace()
             android.util.Log.e("MusicPlayerService", "Exception playing: ${e.message}")
@@ -210,6 +225,7 @@ class MusicPlayerService : Service() {
     private fun pause() {
         player?.pause()
         isPlaying = false
+        unregisterNoisyReceiver()
         updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
         updateNotification()
         stopProgressUpdates()
@@ -220,6 +236,7 @@ class MusicPlayerService : Service() {
     private fun resume() {
         player?.start()
         isPlaying = true
+        registerNoisyReceiver()
         updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         updateNotification()
         startProgressUpdates()
@@ -439,12 +456,41 @@ class MusicPlayerService : Service() {
 
     override fun onDestroy() {
         stopProgressUpdates()
+        unregisterNoisyReceiver()
         player?.release()
         player = null
         mediaSession?.release()
         mediaSession = null
         abandonAudioFocus()
         super.onDestroy()
+    }
+
+    /**
+     * Register the "becoming noisy" receiver to pause playback when
+     * Bluetooth disconnects or headphones are unplugged.
+     */
+    private fun registerNoisyReceiver() {
+        if (!isNoisyReceiverRegistered) {
+            val intentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            registerReceiver(becomingNoisyReceiver, intentFilter)
+            isNoisyReceiverRegistered = true
+        }
+    }
+
+    /**
+     * Unregister the "becoming noisy" receiver.
+     * Handles IllegalArgumentException if the receiver wasn't registered.
+     */
+    private fun unregisterNoisyReceiver() {
+        if (isNoisyReceiverRegistered) {
+            try {
+                unregisterReceiver(becomingNoisyReceiver)
+            } catch (e: IllegalArgumentException) {
+                // Receiver was not registered, ignore
+                android.util.Log.w("MusicPlayerService", "Noisy receiver was not registered: ${e.message}")
+            }
+            isNoisyReceiverRegistered = false
+        }
     }
 }
 

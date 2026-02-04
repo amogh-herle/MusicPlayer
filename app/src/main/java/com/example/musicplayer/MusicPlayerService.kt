@@ -27,6 +27,7 @@ import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
 import androidx.media.app.NotificationCompat.MediaStyle
+import java.io.ByteArrayOutputStream
 import java.io.FileNotFoundException
 
 class MusicPlayerService : Service() {
@@ -141,11 +142,14 @@ class MusicPlayerService : Service() {
             val albumArtUri = "content://media/external/audio/albumart/$currentAlbumId".toUri()
             contentResolver.openInputStream(albumArtUri)?.use { stream ->
                 currentAlbumArt = BitmapFactory.decodeStream(stream)
+                android.util.Log.d("MusicPlayerService", "Loaded album art from MediaStore for albumId=$currentAlbumId: ${currentAlbumArt != null}")
             }
         } catch (_: FileNotFoundException) {
             // Album art not found
+            android.util.Log.d("MusicPlayerService", "No MediaStore album art found for albumId=$currentAlbumId")
         } catch (e: Exception) {
             e.printStackTrace()
+            android.util.Log.w("MusicPlayerService", "Exception loading MediaStore album art for albumId=$currentAlbumId: ${e.message}")
         }
 
         if (currentAlbumArt == null) {
@@ -155,11 +159,45 @@ class MusicPlayerService : Service() {
                 val embeddedArt = retriever.embeddedPicture
                 if (embeddedArt != null) {
                     currentAlbumArt = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
+                    android.util.Log.d("MusicPlayerService", "Loaded embedded album art from file: ${currentAlbumArt != null}")
+                } else {
+                    android.util.Log.d("MusicPlayerService", "No embedded picture in media file")
                 }
                 retriever.release()
             } catch (e: Exception) {
                 e.printStackTrace()
+                android.util.Log.w("MusicPlayerService", "Exception extracting embedded art: ${e.message}")
             }
+        }
+    }
+
+    private fun albumArtToBytes(): ByteArray? {
+        val bmp = currentAlbumArt ?: return null
+        return try {
+            // Resize to a small square suitable for widgets to keep intent size small
+            val targetSize = 128
+            val scaled = Bitmap.createScaledBitmap(bmp, targetSize, targetSize, true)
+            val baos = ByteArrayOutputStream()
+            // First try PNG
+            scaled.compress(Bitmap.CompressFormat.PNG, 90, baos)
+            var bytes = baos.toByteArray()
+            baos.reset()
+
+            // If PNG is too large, fall back to JPEG to reduce size
+            if (bytes.size > 100 * 1024) {
+                android.util.Log.d("MusicPlayerService", "PNG too large (${bytes.size} bytes), compressing as JPEG")
+                val baosJ = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, 75, baosJ)
+                bytes = baosJ.toByteArray()
+                baosJ.close()
+            }
+
+            baos.close()
+            android.util.Log.d("MusicPlayerService", "albumArtToBytes produced ${bytes.size} bytes (targetSize=$targetSize)")
+            bytes
+        } catch (e: Exception) {
+            android.util.Log.w("MusicPlayerService", "Failed to convert album art to bytes: ${e.message}")
+            null
         }
     }
 
@@ -300,13 +338,21 @@ class MusicPlayerService : Service() {
             albumId = currentAlbumId
         )
 
-        // Update widget
+        // Debug log current song
+        android.util.Log.d("MusicPlayerService", "broadcastSongChanged: $currentTitle by $currentArtist (albumId=$currentAlbumId). isPlaying=$isPlaying")
+
+        // Update widget, include album art bytes if available
+        val artBytes = albumArtToBytes()
+        if (artBytes == null) {
+            android.util.Log.d("MusicPlayerService", "No album art bytes to send to widget")
+        }
         MusicWidgetProvider.updateWidget(
             context = this,
             title = currentTitle,
             artist = currentArtist,
             isPlaying = isPlaying,
-            albumId = currentAlbumId
+            albumId = currentAlbumId,
+            albumArtBytes = artBytes
         )
     }
 
@@ -316,7 +362,8 @@ class MusicPlayerService : Service() {
             title = currentTitle,
             artist = currentArtist,
             isPlaying = isPlaying,
-            albumId = currentAlbumId
+            albumId = currentAlbumId,
+            albumArtBytes = albumArtToBytes()
         )
     }
 

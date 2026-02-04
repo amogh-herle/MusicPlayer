@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.cardview:cardview:1.0.0")
 
     // Media support for notifications
     implementation("androidx.media:media:1.7.0")

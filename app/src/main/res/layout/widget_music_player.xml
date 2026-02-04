@@ -1,84 +1,127 @@
 <!-- res/layout/widget_music_player.xml -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:padding="12dp"
-    android:background="#1E1E1E"
-    android:gravity="center_vertical">
+    android:padding="16dp">
 
-    <!-- Album Art -->
-    <ImageView
-        android:id="@+id/widget_album_art"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:scaleType="centerCrop"
-        android:background="#2A2A2A"
-        android:contentDescription="Album Art" />
-
-    <!-- Song Info -->
-    <LinearLayout
-        android:layout_width="0dp"
+    <!-- Dark background card -->
+    <RelativeLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="12dp"
-        android:layout_marginEnd="12dp"
-        android:orientation="vertical">
+        android:background="@drawable/widget_background"
+        android:padding="12dp">
 
-        <TextView
-            android:id="@+id/widget_song_title"
+        <!-- Album Art container (FrameLayout used instead of CardView for widget compatibility) -->
+        <FrameLayout
+            android:id="@+id/album_art_card"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true">
+
+            <ImageView
+                android:id="@+id/widget_album_art"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_album_placeholder"
+                android:contentDescription="Album Art" />
+        </FrameLayout>
+
+        <!-- Song Info Container -->
+        <LinearLayout
+            android:id="@+id/song_info_container"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Song Title"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:textColor="#FFFFFF"
-            android:singleLine="true"
-            android:ellipsize="end" />
+            android:layout_toEndOf="@id/album_art_card"
+            android:layout_toStartOf="@id/controls_container"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/widget_artist_name"
-            android:layout_width="match_parent"
+            <TextView
+                android:id="@+id/widget_song_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Song Title"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true" />
+
+            <TextView
+                android:id="@+id/widget_artist_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Artist Name"
+                android:textColor="#B3B3B3"
+                android:textSize="13sp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:singleLine="true" />
+        </LinearLayout>
+
+        <!-- Control Buttons Container -->
+        <LinearLayout
+            android:id="@+id/controls_container"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="Artist Name"
-            android:textSize="12sp"
-            android:textColor="#B3B3B3"
-            android:singleLine="true"
-            android:ellipsize="end" />
-    </LinearLayout>
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-    <!-- Previous Button -->
-    <ImageButton
-        android:id="@+id/widget_prev_button"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:layout_marginEnd="4dp"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:src="@android:drawable/ic_media_previous"
-        android:tint="#FFFFFF"
-        android:contentDescription="Previous" />
+            <!-- Previous Button -->
+            <ImageButton
+                android:id="@+id/widget_prev_button"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_previous"
+                android:tint="#FFFFFF"
+                android:scaleType="fitCenter"
+                android:contentDescription="Previous" />
 
-    <!-- Play/Pause Button -->
-    <ImageButton
-        android:id="@+id/widget_play_pause_button"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_marginStart="4dp"
-        android:layout_marginEnd="4dp"
-        android:background="@android:drawable/btn_default"
-        android:src="@android:drawable/ic_media_play"
-        android:contentDescription="Play/Pause" />
+            <!-- Play/Pause Button (white circle) -->
+            <FrameLayout
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp">
 
-    <!-- Next Button -->
-    <ImageButton
-        android:id="@+id/widget_next_button"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:layout_marginStart="4dp"
-        android:background="?android:attr/selectableItemBackgroundBorderless"
-        android:src="@android:drawable/ic_media_next"
-        android:tint="#FFFFFF"
-        android:contentDescription="Next" />
+                <!-- White circle background -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/widget_play_button_bg" />
 
-</LinearLayout>
+                <ImageButton
+                    android:id="@+id/widget_play_pause_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@android:color/transparent"
+                    android:src="@drawable/ic_play_arrow_black"
+                    android:padding="8dp"
+                    android:scaleType="fitCenter"
+                    android:contentDescription="Play/Pause" />
+            </FrameLayout>
+
+            <!-- Next Button -->
+            <ImageButton
+                android:id="@+id/widget_next_button"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_skip_next"
+                android:tint="#FFFFFF"
+                android:scaleType="fitCenter"
+                android:contentDescription="Next" />
+        </LinearLayout>
+
+    </RelativeLayout>
+
+</RelativeLayout>

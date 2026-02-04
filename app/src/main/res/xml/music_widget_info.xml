@@ -1,12 +1,15 @@
 <!-- res/xml/music_widget_info.xml -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="280dp"
-    android:minHeight="72dp"
+    android:minWidth="250dp"
+    android:minHeight="40dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="40dp"
     android:targetCellWidth="4"
     android:targetCellHeight="1"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_music_player"
-    android:resizeMode="horizontal"
+    android:previewImage="@mipmap/ic_launcher"
+    android:previewLayout="@layout/widget_music_player"
+    android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:description="@string/widget_description"
-    android:previewLayout="@layout/widget_music_player" />
+    android:description="@string/widget_description" />

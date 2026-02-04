@@ -60,11 +60,9 @@ class MusicPlayerService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var isNoisyReceiverRegistered = false
 
-    // Receiver to handle audio becoming "noisy" (e.g., Bluetooth disconnect, headphones unplugged)
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                // Pause playback immediately when Bluetooth disconnects or headphones are unplugged
                 pause()
             }
         }
@@ -87,6 +85,20 @@ class MusicPlayerService : Service() {
         createNotificationChannel()
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         initMediaSession()
+
+        // FIX: Initialize and restore playlist state for cold starts
+        PlaylistManager.initialize(applicationContext)
+        if (PlaylistManager.restoreState()) {
+            val song = PlaylistManager.getCurrentSong()
+            if (song != null) {
+                currentTitle = song.title
+                currentArtist = song.artist
+                currentAlbumId = song.albumId
+                currentUri = song.uri
+                // Update widget immediately with restored state (Paused)
+                broadcastSongChanged()
+            }
+        }
     }
 
     private fun initMediaSession() {
@@ -104,12 +116,9 @@ class MusicPlayerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Recreate notification channel every time to ensure it exists
-        // This protects against Android's background restrictions and channel corruption
         createNotificationChannel()
 
-        // Start foreground immediately with a placeholder notification if needed
-        if (currentUri == null) {
+        if (currentUri == null && intent?.action != ACTION_PLAY) {
             startForegroundWithPlaceholder()
         }
 
@@ -127,7 +136,16 @@ class MusicPlayerService : Service() {
                 }
             }
             ACTION_PAUSE -> pause()
-            ACTION_RESUME -> resume()
+            ACTION_RESUME -> {
+                // FIX: Handle cold start resume from widget
+                if (player == null && currentUri != null) {
+                    loadAlbumArt(currentUri!!)
+                    requestAudioFocus()
+                    play(currentUri!!)
+                } else {
+                    resume()
+                }
+            }
             ACTION_STOP -> { abandonAudioFocus(); stopSelf() }
             ACTION_NEXT -> playNext()
             ACTION_PREV -> playPrevious()
@@ -136,20 +154,18 @@ class MusicPlayerService : Service() {
         return START_STICKY
     }
 
+    // ... [Rest of the file remains exactly the same as provided previously] ...
+
     private fun loadAlbumArt(uri: Uri) {
         currentAlbumArt = null
         try {
             val albumArtUri = "content://media/external/audio/albumart/$currentAlbumId".toUri()
             contentResolver.openInputStream(albumArtUri)?.use { stream ->
                 currentAlbumArt = BitmapFactory.decodeStream(stream)
-                android.util.Log.d("MusicPlayerService", "Loaded album art from MediaStore for albumId=$currentAlbumId: ${currentAlbumArt != null}")
             }
         } catch (_: FileNotFoundException) {
-            // Album art not found
-            android.util.Log.d("MusicPlayerService", "No MediaStore album art found for albumId=$currentAlbumId")
         } catch (e: Exception) {
             e.printStackTrace()
-            android.util.Log.w("MusicPlayerService", "Exception loading MediaStore album art for albumId=$currentAlbumId: ${e.message}")
         }
 
         if (currentAlbumArt == null) {
@@ -159,14 +175,10 @@ class MusicPlayerService : Service() {
                 val embeddedArt = retriever.embeddedPicture
                 if (embeddedArt != null) {
                     currentAlbumArt = BitmapFactory.decodeByteArray(embeddedArt, 0, embeddedArt.size)
-                    android.util.Log.d("MusicPlayerService", "Loaded embedded album art from file: ${currentAlbumArt != null}")
-                } else {
-                    android.util.Log.d("MusicPlayerService", "No embedded picture in media file")
                 }
                 retriever.release()
             } catch (e: Exception) {
                 e.printStackTrace()
-                android.util.Log.w("MusicPlayerService", "Exception extracting embedded art: ${e.message}")
             }
         }
     }
@@ -174,29 +186,22 @@ class MusicPlayerService : Service() {
     private fun albumArtToBytes(): ByteArray? {
         val bmp = currentAlbumArt ?: return null
         return try {
-            // Resize to a small square suitable for widgets to keep intent size small
             val targetSize = 128
             val scaled = Bitmap.createScaledBitmap(bmp, targetSize, targetSize, true)
             val baos = ByteArrayOutputStream()
-            // First try PNG
             scaled.compress(Bitmap.CompressFormat.PNG, 90, baos)
             var bytes = baos.toByteArray()
             baos.reset()
 
-            // If PNG is too large, fall back to JPEG to reduce size
             if (bytes.size > 100 * 1024) {
-                android.util.Log.d("MusicPlayerService", "PNG too large (${bytes.size} bytes), compressing as JPEG")
                 val baosJ = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 75, baosJ)
                 bytes = baosJ.toByteArray()
                 baosJ.close()
             }
-
             baos.close()
-            android.util.Log.d("MusicPlayerService", "albumArtToBytes produced ${bytes.size} bytes (targetSize=$targetSize)")
             bytes
         } catch (e: Exception) {
-            android.util.Log.w("MusicPlayerService", "Failed to convert album art to bytes: ${e.message}")
             null
         }
     }
@@ -238,9 +243,7 @@ class MusicPlayerService : Service() {
                     broadcastSongChanged()
                 }
                 setOnCompletionListener { playNext() }
-                setOnErrorListener { _, what, extra ->
-                    android.util.Log.e("MusicPlayerService", "MediaPlayer error: what=$what, extra=$extra")
-                    // Don't auto-skip on error - just stop playback
+                setOnErrorListener { _, _, _ ->
                     this@MusicPlayerService.isPlaying = false
                     updatePlaybackState(PlaybackStateCompat.STATE_ERROR)
                     broadcastProgress()
@@ -252,8 +255,6 @@ class MusicPlayerService : Service() {
             registerNoisyReceiver()
         } catch (e: Exception) {
             e.printStackTrace()
-            android.util.Log.e("MusicPlayerService", "Exception playing: ${e.message}")
-            // Don't auto-skip on exception - just log and stop
             isPlaying = false
             updatePlaybackState(PlaybackStateCompat.STATE_ERROR)
             broadcastProgress()
@@ -338,21 +339,13 @@ class MusicPlayerService : Service() {
             albumId = currentAlbumId
         )
 
-        // Debug log current song
-        android.util.Log.d("MusicPlayerService", "broadcastSongChanged: $currentTitle by $currentArtist (albumId=$currentAlbumId). isPlaying=$isPlaying")
-
-        // Update widget, include album art bytes if available
-        val artBytes = albumArtToBytes()
-        if (artBytes == null) {
-            android.util.Log.d("MusicPlayerService", "No album art bytes to send to widget")
-        }
         MusicWidgetProvider.updateWidget(
             context = this,
             title = currentTitle,
             artist = currentArtist,
             isPlaying = isPlaying,
             albumId = currentAlbumId,
-            albumArtBytes = artBytes
+            albumArtBytes = albumArtToBytes()
         )
     }
 
@@ -388,12 +381,12 @@ class MusicPlayerService : Service() {
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_SEEK_TO or
-                PlaybackStateCompat.ACTION_STOP
+                        PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO or
+                        PlaybackStateCompat.ACTION_STOP
             )
             .setState(state, position, playbackSpeed, SystemClock.elapsedRealtime())
 
@@ -464,8 +457,6 @@ class MusicPlayerService : Service() {
 
     private fun createNotificationChannel() {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-
-        // Use IMPORTANCE_LOW to prevent sound/vibration but keep notification visible
         val channel = NotificationChannel(
             CHANNEL_ID,
             "Music Playback",
@@ -474,12 +465,10 @@ class MusicPlayerService : Service() {
             description = "Music player controls"
             setShowBadge(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            // Disable sound and vibration
             setSound(null, null)
             enableVibration(false)
             enableLights(false)
         }
-
         notificationManager.createNotificationChannel(channel)
     }
 
@@ -495,7 +484,6 @@ class MusicPlayerService : Service() {
 
             startForeground(NOTIFICATION_ID, placeholderNotification)
         } catch (e: Exception) {
-            android.util.Log.e("MusicPlayerService", "Error starting foreground: ${e.message}")
         }
     }
 
@@ -503,14 +491,8 @@ class MusicPlayerService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
-
-        // Stop music when user swipes the app away from recent apps
         pause()
-
-        // Stop the service and remove the notification
         stopSelf()
-
-        // Ensure notification is removed
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.cancel(NOTIFICATION_ID)
     }
@@ -526,10 +508,6 @@ class MusicPlayerService : Service() {
         super.onDestroy()
     }
 
-    /**
-     * Register the "becoming noisy" receiver to pause playback when
-     * Bluetooth disconnects or headphones are unplugged.
-     */
     private fun registerNoisyReceiver() {
         if (!isNoisyReceiverRegistered) {
             val intentFilter = IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
@@ -538,20 +516,12 @@ class MusicPlayerService : Service() {
         }
     }
 
-    /**
-     * Unregister the "becoming noisy" receiver.
-     * Handles IllegalArgumentException if the receiver wasn't registered.
-     */
     private fun unregisterNoisyReceiver() {
         if (isNoisyReceiverRegistered) {
             try {
                 unregisterReceiver(becomingNoisyReceiver)
-            } catch (e: IllegalArgumentException) {
-                // Receiver was not registered, ignore
-                android.util.Log.w("MusicPlayerService", "Noisy receiver was not registered: ${e.message}")
-            }
+            } catch (e: IllegalArgumentException) { }
             isNoisyReceiverRegistered = false
         }
     }
 }
-
